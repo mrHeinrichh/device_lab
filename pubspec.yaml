@@ -1,0 +1,30 @@
+name: device_lab
+description: >-
+  Preview a Flutter app on any device without a simulator: an up-to-date
+  catalog of phones, foldables, tablets and desktops, real display features
+  (folds, hinges, notches, Dynamic Island), free-form resolutions, and the
+  same device specs reusable in golden tests.
+version: 0.1.0
+repository: https://github.com/mrHeinrichh/device_lab
+issue_tracker: https://github.com/mrHeinrichh/device_lab/issues
+topics:
+  - responsive
+  - preview
+  - devtools
+  - testing
+  - foldable
+
+environment:
+  sdk: ^3.6.0
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+
+flutter:
