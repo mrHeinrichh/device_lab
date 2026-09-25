@@ -3,7 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../model/device_spec.dart';
 
+/// Drives `flutter_test` from the same device specs as the preview.
+///
+/// Import `package:device_lab/device_lab_testing.dart` to use these.
 extension DeviceLabTester on WidgetTester {
+  /// Configures the test view to match [device].
+  ///
+  /// Sets size, pixel ratio, padding and display features, and restores the
+  /// view automatically when the test ends.
   void applyDevice(
     DeviceSpec device, {
     Orientation orientation = Orientation.portrait,
@@ -28,6 +35,7 @@ extension DeviceLabTester on WidgetTester {
     addTearDown(view.reset);
   }
 
+  /// Calls [applyDevice], pumps [widget] and settles.
   Future<void> pumpOnDevice(
     Widget widget,
     DeviceSpec device, {
@@ -41,6 +49,10 @@ extension DeviceLabTester on WidgetTester {
   }
 }
 
+/// A stable golden file name for [device] under the given [scenario].
+///
+/// Includes the posture for foldables so cover and unfolded goldens do not
+/// collide.
 String goldenNameFor(
   DeviceSpec device, {
   required String scenario,

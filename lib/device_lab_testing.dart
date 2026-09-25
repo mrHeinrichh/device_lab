@@ -1,3 +1,4 @@
+/// Golden-test helpers that reuse the same device specs as the preview.
 library;
 
 export 'dart:ui' show DisplayFeature, DisplayFeatureType, DisplayFeatureState;

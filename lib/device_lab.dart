@@ -1,3 +1,6 @@
+/// Device preview for Flutter: an up-to-date device catalog, real display
+/// features for foldables and cutouts, free-form resolutions and a runtime
+/// preview toggle.
 library;
 
 export 'dart:ui' show DisplayFeature, DisplayFeatureType, DisplayFeatureState;

@@ -1,3 +1,9 @@
+## 0.1.1
+
+- Document the public API so the reference on pub.dev is usable.
+- Add screenshots of the preview, a flip-phone cover screen and the hidden
+  state.
+
 ## 0.1.0
 
 - Initial release.

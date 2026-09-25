@@ -9,6 +9,11 @@ import 'desktop_devices.dart';
 import 'generic_devices.dart';
 import 'oem_devices.dart';
 
+/// The registry of devices available to the preview and to golden tests.
+///
+/// Ships with phones, foldables, tablets, desktops, wearables and generic
+/// resolution presets. Extend it at runtime with [register] or [loadJson] so
+/// new hardware does not require a new release of this package.
 abstract final class DeviceCatalog {
   static final Map<String, DeviceSpec> _devices = {
     for (final d in [
@@ -26,20 +31,26 @@ abstract final class DeviceCatalog {
       d.id: d,
   };
 
+  /// Every registered device.
   static List<DeviceSpec> get all => _devices.values.toList(growable: false);
 
+  /// The device with the given [DeviceSpec.id], or null.
   static DeviceSpec? byId(String id) => _devices[id];
 
+  /// Adds [device], replacing any existing entry with the same id.
   static void register(DeviceSpec device) => _devices[device.id] = device;
 
+  /// Adds each of [devices], replacing entries with matching ids.
   static void registerAll(Iterable<DeviceSpec> devices) {
     for (final d in devices) {
       register(d);
     }
   }
 
+  /// Removes the device with the given id.
   static void remove(String id) => _devices.remove(id);
 
+  /// Devices matching every non-null filter.
   static List<DeviceSpec> query({
     DevicePlatform? platform,
     DeviceCategory? category,
@@ -54,6 +65,7 @@ abstract final class DeviceCatalog {
               (releasedAfter == null || (d.releaseYear ?? 0) >= releasedAfter))
           .toList(growable: false);
 
+  /// Devices whose name, id or vendor contains [term], ignoring case.
   static List<DeviceSpec> search(String term) {
     final q = term.trim().toLowerCase();
     if (q.isEmpty) return all;
@@ -65,9 +77,14 @@ abstract final class DeviceCatalog {
         .toList(growable: false);
   }
 
+  /// Every known vendor name, sorted.
   static List<String> get vendors =>
       (all.map((d) => d.vendor).whereType<String>().toSet().toList()..sort());
 
+  /// Registers devices from a JSON document and returns how many were added.
+  ///
+  /// Accepts either a bare list or an object with a `devices` key. Use this to
+  /// ship new hardware as an asset instead of waiting on a package release.
   static int loadJson(String source) {
     final decoded = jsonDecode(source);
     final list = decoded is Map<String, dynamic>
@@ -81,11 +98,14 @@ abstract final class DeviceCatalog {
     return parsed.length;
   }
 
+  /// The whole catalog as indented JSON, suitable for [loadJson].
   static String exportJson() => const JsonEncoder.withIndent('  ')
       .convert({'devices': all.map(DeviceSpecCodec.toJson).toList()});
 }
 
+/// Converts [DeviceSpec] to and from the JSON shape [DeviceCatalog] accepts.
 abstract final class DeviceSpecCodec {
+  /// Reads a device from its JSON representation.
   static DeviceSpec fromJson(Map<String, dynamic> json) => DeviceSpec(
         id: json['id'] as String,
         name: json['name'] as String,
@@ -101,6 +121,7 @@ abstract final class DeviceSpecCodec {
             .toList(),
       );
 
+  /// Writes [d] to the JSON representation [fromJson] accepts.
   static Map<String, dynamic> toJson(DeviceSpec d) => {
         'id': d.id,
         'name': d.name,

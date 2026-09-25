@@ -6,6 +6,11 @@ Preview a Flutter app on any device without booting a simulator.
 device frame with a tools panel for size, orientation, fold posture, locale,
 text scale and accessibility flags.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mrHeinrichh/device_lab/master/screenshots/preview-foldable.png" width="49%" alt="iPhone Duo unfolded, with a two-pane layout driven by the fold display feature">
+  <img src="https://raw.githubusercontent.com/mrHeinrichh/device_lab/master/screenshots/flip-cover.png" width="49%" alt="Galaxy Z Flip 7 cover screen at 367 by 349 logical pixels">
+</p>
+
 149 built-in devices across 16 vendors — iPhone (including **iPhone Duo**, the
 foldable), Pixel, Galaxy S/A, book-folds, flip phones, iPads, Android tablets,
 laptops, watches, TV, plus generic resolution presets from 320×568 to 4K. And
@@ -147,6 +152,10 @@ DeviceLab.togglePreview(context);
 DeviceLab.setPreviewing(context, false);
 DeviceLab.isPreviewing(context);
 ```
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mrHeinrichh/device_lab/master/screenshots/original-screen.png" width="49%" alt="The preview hidden, app at the real window size with the restore button docked bottom-left">
+</p>
 
 While hidden, a **Device Lab** pill floats over the app to bring it back. It
 docks to a corner like the Flutter Inspector button: drag it and it snaps to

@@ -6,6 +6,29 @@ import 'device_lab_controller.dart';
 import 'device_stage.dart';
 import 'tools_panel.dart';
 
+/// Wraps your app in a device preview.
+///
+/// Place this at the root and point your `MaterialApp.builder` at
+/// [appBuilder] so the simulated [MediaQuery] lands below the app and reaches
+/// every route:
+///
+/// ```dart
+/// void main() => runApp(
+///       DeviceLab(
+///         enabled: isDeviceLabAvailable,
+///         builder: (_) => const MyApp(),
+///       ),
+///     );
+///
+/// class MyApp extends StatelessWidget {
+///   @override
+///   Widget build(BuildContext context) => MaterialApp(
+///         builder: DeviceLab.appBuilder,
+///         locale: DeviceLab.localeOf(context),
+///         home: const HomePage(),
+///       );
+/// }
+/// ```
 class DeviceLab extends StatefulWidget {
   const DeviceLab({
     super.key,
@@ -19,24 +42,52 @@ class DeviceLab extends StatefulWidget {
     this.restoreButtonAlignment,
   });
 
+  /// Builds the app being previewed.
   final WidgetBuilder builder;
+
+  /// Whether the preview is available at all.
+  ///
+  /// Pass [isDeviceLabAvailable] to strip it from release builds. When false
+  /// the app is returned untouched and [appBuilder] is a pass-through.
   final bool enabled;
+
+  /// An externally owned controller. One is created when this is null.
   final DeviceLabController? controller;
+
+  /// The [DeviceSpec.id] to select on first build.
   final String? initialDeviceId;
+
+  /// Locales offered in the tools panel.
   final List<Locale> availableLocales;
+
+  /// Colour behind the device frame.
   final Color? backgroundColor;
+
+  /// Whether to float a restore button over the app while the preview is
+  /// hidden.
   final bool showRestoreButton;
+
+  /// The corner to dock the restore button to.
+  ///
+  /// Takes precedence over the value already on [controller]. Dragging the
+  /// button re-docks it to the nearest corner.
   final Alignment? restoreButtonAlignment;
 
+  /// The nearest controller, or null when there is no [DeviceLab] above.
   static DeviceLabController? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<DeviceLabScope>()?.notifier;
 
+  /// The nearest controller. Asserts when there is no [DeviceLab] above.
   static DeviceLabController of(BuildContext context) {
     final controller = maybeOf(context);
     assert(controller != null, 'No DeviceLab ancestor found.');
     return controller!;
   }
 
+  /// Installs the simulated [MediaQuery] and [TargetPlatform] below your app.
+  ///
+  /// Assign this to `MaterialApp.builder`. It is a pass-through whenever the
+  /// preview is disabled or hidden, so the app then sees the real window.
   static Widget appBuilder(BuildContext context, Widget? child) {
     final controller = maybeOf(context);
     final content = child ?? const SizedBox.shrink();
@@ -52,14 +103,18 @@ class DeviceLab extends StatefulWidget {
     );
   }
 
+  /// The simulated locale. Assign to `MaterialApp.locale`.
   static Locale? localeOf(BuildContext context) => maybeOf(context)?.locale;
 
+  /// Flips between the preview and the app's original screen.
   static void togglePreview(BuildContext context) =>
       maybeOf(context)?.togglePreview();
 
+  /// Shows the preview, or the app's original screen.
   static void setPreviewing(BuildContext context, bool value) =>
       maybeOf(context)?.setPreviewing(value);
 
+  /// Whether the simulated [MediaQuery] is currently applied.
   static bool isPreviewing(BuildContext context) =>
       maybeOf(context)?.active ?? false;
 
@@ -120,6 +175,8 @@ class _DeviceLabState extends State<DeviceLab> {
       );
 }
 
+/// Exposes the [DeviceLabController] to the subtree, including across the
+/// boundary into your own `MaterialApp`.
 class DeviceLabScope extends InheritedNotifier<DeviceLabController> {
   const DeviceLabScope({
     super.key,
@@ -407,4 +464,5 @@ class _HostShell extends StatelessWidget {
   }
 }
 
+/// Whether device_lab should run, that is every build except release.
 bool get isDeviceLabAvailable => !kReleaseMode;

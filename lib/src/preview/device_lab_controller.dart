@@ -3,6 +3,10 @@ import 'package:flutter/widgets.dart';
 import '../catalog/device_catalog.dart';
 import '../model/device_spec.dart';
 
+/// Holds every piece of preview state and notifies when any of it changes.
+///
+/// Pass one to [DeviceLab] to drive the preview from your own code, or let
+/// the widget create its own.
 class DeviceLabController extends ChangeNotifier {
   DeviceLabController({
     String? initialDeviceId,
@@ -18,6 +22,10 @@ class DeviceLabController extends ChangeNotifier {
     _orientation = _device.screenFor(_posture).naturalOrientation;
   }
 
+  /// Whether device_lab is available at all.
+  ///
+  /// This is the release-mode gate. [previewing] is the runtime toggle; see
+  /// [active] for the combination.
   bool enabled;
 
   DeviceSpec _device;
@@ -39,30 +47,71 @@ class DeviceLabController extends ChangeNotifier {
   bool _previewing = true;
   Alignment _restoreAlignment;
 
+  /// The selected device.
   DeviceSpec get device => _device;
+
+  /// The orientation the device is being held in.
   Orientation get orientation => _orientation;
+
+  /// How far the selected foldable is opened.
   FoldPosture get posture => _posture;
+
+  /// The custom viewport size, or null when a catalog device is selected.
   Size? get freeformSize => _freeformSize;
+
+  /// Whether a custom size is overriding the selected device.
   bool get isFreeform => _freeformSize != null;
+
+  /// Simulated text scale factor.
   double get textScale => _textScale;
+
+  /// Simulated platform brightness.
   Brightness get brightness => _brightness;
+
+  /// Simulated locale, or null to use the app's default.
   Locale? get locale => _locale;
+
+  /// Simulated bold-text accessibility setting.
   bool get boldText => _boldText;
+
+  /// Simulated high-contrast accessibility setting.
   bool get highContrast => _highContrast;
+
+  /// Simulated inverted-colours accessibility setting.
   bool get invertColors => _invertColors;
+
+  /// Simulated reduce-motion accessibility setting.
   bool get disableAnimations => _disableAnimations;
+
+  /// Simulated screen-reader navigation setting.
   bool get accessibleNavigation => _accessibleNavigation;
+
+  /// Whether the device bezel is drawn. Always false in free-form mode.
   bool get showFrame => _showFrame && !isFreeform;
+
+  /// Whether the safe-area overlay is drawn.
   bool get showSafeAreas => _showSafeAreas;
+
+  /// Whether rulers are drawn.
   bool get showRulers => _showRulers;
+
+  /// Whether the tools panel is expanded.
   bool get toolsVisible => _toolsVisible;
 
+  /// Whether the preview is shown rather than the app's original screen.
   bool get previewing => _previewing;
 
+  /// Whether the simulated [MediaQuery] is being applied.
+  ///
+  /// False when either the release gate [enabled] or the runtime toggle
+  /// [previewing] is off, in which case the app sees the real window.
   bool get active => enabled && _previewing;
 
+  /// The corner the restore button is docked to while the preview is hidden.
   Alignment get restoreAlignment => _restoreAlignment;
 
+  /// The screen currently being simulated, honouring [posture] and any
+  /// free-form size.
   DeviceScreen get screen {
     final base = _device.screenFor(_posture);
     final size = _freeformSize;
@@ -74,13 +123,18 @@ class DeviceLabController extends ChangeNotifier {
     );
   }
 
+  /// The simulated viewport size in logical pixels.
   Size get logicalSize =>
       isFreeform ? _freeformSize! : screen.sizeFor(_orientation);
 
+  /// Whether the orientation toggle applies right now.
   bool get canRotate => screen.rotatable && !isFreeform;
 
+  /// Whether posture controls apply right now.
   bool get canFold => _device.isFoldable;
 
+  /// Selects [value], clearing any free-form size and adopting the device's
+  /// natural orientation.
   void selectDevice(DeviceSpec value) {
     if (_device.id == value.id && !isFreeform) return;
     _device = value;
@@ -90,23 +144,27 @@ class DeviceLabController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Selects the catalog device with the given id, if it exists.
   void selectDeviceId(String id) {
     final found = DeviceCatalog.byId(id);
     if (found != null) selectDevice(found);
   }
 
+  /// Sets the orientation the device is held in.
   void setOrientation(Orientation value) {
     if (_orientation == value) return;
     _orientation = value;
     notifyListeners();
   }
 
+  /// Switches between portrait and landscape.
   void toggleOrientation() => setOrientation(
         _orientation == Orientation.portrait
             ? Orientation.landscape
             : Orientation.portrait,
       );
 
+  /// Sets the fold posture, switching screens and orientation to match.
   void setPosture(FoldPosture value) {
     if (_posture == value) return;
     final previous = _device.screenFor(_posture);
@@ -118,6 +176,7 @@ class DeviceLabController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Overrides the viewport with an arbitrary size, or clears it with null.
   void setFreeformSize(Size? value) {
     _freeformSize = value == null
         ? null
@@ -125,42 +184,66 @@ class DeviceLabController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sets the simulated text scale, clamped to between 0.5 and 3.5.
   void setTextScale(double value) {
     _textScale = value.clamp(0.5, 3.5);
     notifyListeners();
   }
 
+  /// Sets the simulated platform brightness.
   void setBrightness(Brightness value) {
     _brightness = value;
     notifyListeners();
   }
 
+  /// Sets the simulated locale.
   void setLocale(Locale? value) {
     _locale = value;
     notifyListeners();
   }
 
+  /// Turns device_lab on or off entirely.
   void setEnabled(bool value) {
     enabled = value;
     notifyListeners();
   }
 
+  /// Sets the simulated bold-text setting.
   void setBoldText(bool value) => _set(() => _boldText = value);
+
+  /// Sets the simulated high-contrast setting.
   void setHighContrast(bool value) => _set(() => _highContrast = value);
+
+  /// Sets the simulated inverted-colours setting.
   void setInvertColors(bool value) => _set(() => _invertColors = value);
+
+  /// Sets the simulated reduce-motion setting.
   void setDisableAnimations(bool value) =>
       _set(() => _disableAnimations = value);
+
+  /// Sets the simulated screen-reader navigation setting.
   void setAccessibleNavigation(bool value) =>
       _set(() => _accessibleNavigation = value);
+
+  /// Shows or hides the device bezel.
   void setShowFrame(bool value) => _set(() => _showFrame = value);
+
+  /// Shows or hides the safe-area overlay.
   void setShowSafeAreas(bool value) => _set(() => _showSafeAreas = value);
+
+  /// Shows or hides the rulers.
   void setShowRulers(bool value) => _set(() => _showRulers = value);
+
+  /// Expands or collapses the tools panel.
   void setToolsVisible(bool value) => _set(() => _toolsVisible = value);
 
+  /// Shows the preview, or the app's original screen.
   void setPreviewing(bool value) => _set(() => _previewing = value);
 
+  /// Flips between the preview and the original screen.
   void togglePreview() => setPreviewing(!_previewing);
 
+  /// Docks the restore button to the given corner.
   void setRestoreAlignment(Alignment value) =>
       _set(() => _restoreAlignment = value);
 
@@ -169,6 +252,10 @@ class DeviceLabController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// [base] with every simulated value applied.
+  ///
+  /// This is what [DeviceLab.appBuilder] installs below your `MaterialApp`,
+  /// including display features for folds and cutouts.
   MediaQueryData resolveMediaQuery(MediaQueryData base) {
     final active = screen;
     final size = logicalSize;
