@@ -28,9 +28,8 @@ class DeviceLab extends StatefulWidget {
   final bool showRestoreButton;
   final Alignment? restoreButtonAlignment;
 
-  static DeviceLabController? maybeOf(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<DeviceLabScope>()
-      ?.notifier;
+  static DeviceLabController? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<DeviceLabScope>()?.notifier;
 
   static DeviceLabController of(BuildContext context) {
     final controller = maybeOf(context);
@@ -95,8 +94,7 @@ class _DeviceLabState extends State<DeviceLab> {
       _controller.setEnabled(widget.enabled);
     }
     final alignment = widget.restoreButtonAlignment;
-    if (alignment != null &&
-        alignment != oldWidget.restoreButtonAlignment) {
+    if (alignment != null && alignment != oldWidget.restoreButtonAlignment) {
       _controller.setRestoreAlignment(alignment);
     }
   }
@@ -270,8 +268,7 @@ class _OriginalScreenState extends State<_OriginalScreen> {
                     },
                     onPanUpdate: (d) => _moveTo(d.globalPosition),
                     onPanEnd: (_) {
-                      widget.controller
-                          .setRestoreAlignment(_dock(_alignment));
+                      widget.controller.setRestoreAlignment(_dock(_alignment));
                       setState(() => _dragging = false);
                     },
                     child: _RestorePill(

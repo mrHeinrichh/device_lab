@@ -51,8 +51,7 @@ abstract final class DeviceCatalog {
               (platform == null || d.platform == platform) &&
               (category == null || d.category == category) &&
               (vendor == null || d.vendor == vendor) &&
-              (releasedAfter == null ||
-                  (d.releaseYear ?? 0) >= releasedAfter))
+              (releasedAfter == null || (d.releaseYear ?? 0) >= releasedAfter))
           .toList(growable: false);
 
   static List<DeviceSpec> search(String term) {

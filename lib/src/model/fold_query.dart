@@ -4,8 +4,7 @@ import 'package:flutter/widgets.dart';
 
 extension FoldQuery on MediaQueryData {
   Iterable<DisplayFeature> get hinges => displayFeatures.where((f) =>
-      f.type == DisplayFeatureType.fold ||
-      f.type == DisplayFeatureType.hinge);
+      f.type == DisplayFeatureType.fold || f.type == DisplayFeatureType.hinge);
 
   Iterable<DisplayFeature> get cutouts =>
       displayFeatures.where((f) => f.type == DisplayFeatureType.cutout);

@@ -87,8 +87,10 @@ class _Panel extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
-                _Row('size', '${media.size.width.toStringAsFixed(0)} × '
-                    '${media.size.height.toStringAsFixed(0)} dp'),
+                _Row(
+                    'size',
+                    '${media.size.width.toStringAsFixed(0)} × '
+                        '${media.size.height.toStringAsFixed(0)} dp'),
                 _Row('dpr', '${media.devicePixelRatio}'),
                 _Row('padding', media.padding.toString()),
                 _Row('textScale', media.textScaler.scale(1).toStringAsFixed(2)),

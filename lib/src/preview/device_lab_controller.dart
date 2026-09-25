@@ -74,9 +74,8 @@ class DeviceLabController extends ChangeNotifier {
     );
   }
 
-  Size get logicalSize => isFreeform
-      ? _freeformSize!
-      : screen.sizeFor(_orientation);
+  Size get logicalSize =>
+      isFreeform ? _freeformSize! : screen.sizeFor(_orientation);
 
   bool get canRotate => screen.rotatable && !isFreeform;
 
@@ -173,9 +172,8 @@ class DeviceLabController extends ChangeNotifier {
   MediaQueryData resolveMediaQuery(MediaQueryData base) {
     final active = screen;
     final size = logicalSize;
-    final padding = isFreeform
-        ? EdgeInsets.zero
-        : active.paddingFor(_orientation);
+    final padding =
+        isFreeform ? EdgeInsets.zero : active.paddingFor(_orientation);
     return base.copyWith(
       size: size,
       devicePixelRatio: active.pixelRatio,

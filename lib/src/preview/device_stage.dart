@@ -17,7 +17,8 @@ class DeviceStage extends StatelessWidget {
   Widget build(BuildContext context) {
     final screen = controller.screen;
     final size = controller.logicalSize;
-    final frame = controller.showFrame ? controller.device.frame : DeviceFrame.none;
+    final frame =
+        controller.showFrame ? controller.device.frame : DeviceFrame.none;
     final bezel = controller.orientation == Orientation.landscape
         ? _rotateInsets(frame.bezel)
         : frame.bezel;
@@ -199,7 +200,9 @@ class _CutoutOverlay extends StatelessWidget {
             borderRadius: BorderRadius.circular(
               switch (cutout.shape) {
                 CutoutShape.notch => 16,
-                CutoutShape.dynamicIsland || CutoutShape.pill => rect.height / 2,
+                CutoutShape.dynamicIsland ||
+                CutoutShape.pill =>
+                  rect.height / 2,
                 CutoutShape.punchHole => rect.height / 2,
                 CutoutShape.none => 0,
               },

@@ -1,9 +1,8 @@
 name: device_lab
 description: >-
-  Preview a Flutter app on any device without a simulator: an up-to-date
-  catalog of phones, foldables, tablets and desktops, real display features
-  (folds, hinges, notches, Dynamic Island), free-form resolutions, and the
-  same device specs reusable in golden tests.
+  Preview your Flutter app on any device without a simulator: 149 devices,
+  foldables with real display features, free-form resolutions, and
+  golden-test integration.
 version: 0.1.0
 repository: https://github.com/mrHeinrichh/device_lab
 issue_tracker: https://github.com/mrHeinrichh/device_lab/issues

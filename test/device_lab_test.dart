@@ -22,8 +22,7 @@ void main() {
     });
 
     test('foldables expose a main and a cover screen', () {
-      final foldables =
-          DeviceCatalog.query(category: DeviceCategory.foldable);
+      final foldables = DeviceCatalog.query(category: DeviceCategory.foldable);
       expect(foldables, isNotEmpty);
       for (final d in foldables) {
         expect(d.screens.length, 2, reason: d.id);
@@ -84,8 +83,7 @@ void main() {
 
     test('json round-trip preserves the spec', () {
       final source = DeviceCatalog.byId('samsung.galaxy-z-fold-7')!;
-      final restored =
-          DeviceSpecCodec.fromJson(DeviceSpecCodec.toJson(source));
+      final restored = DeviceSpecCodec.fromJson(DeviceSpecCodec.toJson(source));
       expect(restored.id, source.id);
       expect(restored.screens.length, source.screens.length);
       expect(
@@ -180,11 +178,7 @@ void main() {
 
       c.setPosture(FoldPosture.halfOpened);
       expect(
-        c
-            .resolveMediaQuery(const MediaQueryData())
-            .displayFeatures
-            .first
-            .state,
+        c.resolveMediaQuery(const MediaQueryData()).displayFeatures.first.state,
         DisplayFeatureState.postureHalfOpened,
       );
 
@@ -316,10 +310,12 @@ void main() {
       expect(find.text('Show original screen'), findsOneWidget);
       final previewSize = t
           .widget<MediaQuery>(
-            find.ancestor(
-              of: find.byType(_Counter),
-              matching: find.byType(MediaQuery),
-            ).first,
+            find
+                .ancestor(
+                  of: find.byType(_Counter),
+                  matching: find.byType(MediaQuery),
+                )
+                .first,
           )
           .data
           .size;
@@ -331,10 +327,12 @@ void main() {
       expect(find.text('Show original screen'), findsNothing);
       final realSize = t
           .widget<MediaQuery>(
-            find.ancestor(
-              of: find.byType(_Counter),
-              matching: find.byType(MediaQuery),
-            ).first,
+            find
+                .ancestor(
+                  of: find.byType(_Counter),
+                  matching: find.byType(MediaQuery),
+                )
+                .first,
           )
           .data
           .size;
@@ -415,8 +413,7 @@ void main() {
       expect(pill.dy, lessThan(screen.height / 2));
     });
 
-    testWidgets('dragging the pill docks it to the nearest corner',
-        (t) async {
+    testWidgets('dragging the pill docks it to the nearest corner', (t) async {
       final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro')
         ..setPreviewing(false);
       await t.pumpWidget(
@@ -501,7 +498,6 @@ void main() {
     });
   });
 }
-
 
 class _Counter extends StatefulWidget {
   const _Counter();

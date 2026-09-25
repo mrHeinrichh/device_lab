@@ -66,9 +66,7 @@ class HingeSpec {
             0, (screen.height - thickness) / 2, screen.width, thickness);
     return DisplayFeature(
       bounds: bounds,
-      type: thickness > 0
-          ? DisplayFeatureType.hinge
-          : DisplayFeatureType.fold,
+      type: thickness > 0 ? DisplayFeatureType.hinge : DisplayFeatureType.fold,
       state: state,
     );
   }
