@@ -15,27 +15,31 @@ class DeviceStage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final previewing = controller.previewing;
     final screen = controller.screen;
-    final size = controller.logicalSize;
-    final frame =
-        controller.showFrame ? controller.device.frame : DeviceFrame.none;
-    final bezel = controller.orientation == Orientation.landscape
-        ? _rotateInsets(frame.bezel)
-        : frame.bezel;
-
-    final outer = Size(
-      size.width + bezel.horizontal,
-      size.height + bezel.vertical,
-    );
+    final frame = previewing && controller.showFrame
+        ? controller.device.frame
+        : DeviceFrame.none;
+    final bezel = previewing
+        ? (controller.orientation == Orientation.landscape
+            ? _rotateInsets(frame.bezel)
+            : frame.bezel)
+        : EdgeInsets.zero;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final maxW = constraints.maxWidth - 48;
-        final maxH = constraints.maxHeight - 48;
-        final scale =
-            (maxW / outer.width).clamp(0.05, 1.0) < (maxH / outer.height)
-                ? (maxW / outer.width).clamp(0.05, 1.0)
-                : (maxH / outer.height).clamp(0.05, 1.0);
+        final size = previewing
+            ? controller.logicalSize
+            : Size(constraints.maxWidth, constraints.maxHeight);
+        final outer = Size(
+          size.width + bezel.horizontal,
+          size.height + bezel.vertical,
+        );
+        final fitWidth = (constraints.maxWidth - 48) / outer.width;
+        final fitHeight = (constraints.maxHeight - 48) / outer.height;
+        final scale = previewing
+            ? (fitWidth < fitHeight ? fitWidth : fitHeight).clamp(0.05, 1.0)
+            : 1.0;
 
         return Center(
           child: Transform.scale(
@@ -49,6 +53,7 @@ class DeviceStage extends StatelessWidget {
                 controller: controller,
                 screen: screen,
                 size: size,
+                previewing: previewing,
                 child: child,
               ),
             ),
@@ -69,6 +74,7 @@ class _Frame extends StatelessWidget {
     required this.controller,
     required this.screen,
     required this.size,
+    required this.previewing,
     required this.child,
   });
 
@@ -77,11 +83,13 @@ class _Frame extends StatelessWidget {
   final DeviceLabController controller;
   final DeviceScreen screen;
   final Size size;
+  final bool previewing;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final radius = controller.showFrame ? screen.cornerRadius : 0.0;
+    final decorated = previewing && controller.showFrame;
+    final radius = decorated ? screen.cornerRadius : 0.0;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -111,18 +119,18 @@ class _Frame extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 child,
-                if (controller.showSafeAreas)
+                if (previewing && controller.showSafeAreas)
                   _SafeAreaOverlay(
                     padding: controller.isFreeform
                         ? EdgeInsets.zero
                         : screen.paddingFor(controller.orientation),
                   ),
-                if (controller.showFrame &&
+                if (decorated &&
                     controller.orientation == screen.naturalOrientation)
                   ...screen.cutouts.map(
                     (c) => _CutoutOverlay(cutout: c, screen: size),
                   ),
-                if (screen.hinge != null && controller.showFrame)
+                if (decorated && screen.hinge != null)
                   _HingeOverlay(
                     hinge: screen.hinge!,
                     posture: controller.posture,

@@ -139,11 +139,6 @@ class DeviceLab extends StatefulWidget {
 class _DeviceLabState extends State<DeviceLab> {
   late DeviceLabController _controller;
 
-  late final Widget _app = KeyedSubtree(
-    key: GlobalKey(debugLabel: 'device_lab.app'),
-    child: Builder(builder: widget.builder),
-  );
-
   @override
   void initState() {
     super.initState();
@@ -176,23 +171,27 @@ class _DeviceLabState extends State<DeviceLab> {
   }
 
   @override
-  Widget build(BuildContext context) => DeviceLabScope(
-        notifier: _controller,
-        child: _PreviewShortcuts(
-          controller: _controller,
-          child: _DeviceLabHost(
-            app: _app,
-            availableLocales: widget.availableLocales,
-            backgroundColor: widget.backgroundColor,
-            showRestoreButton: widget.showRestoreButton,
-          ),
+  Widget build(BuildContext context) {
+    final app = Builder(builder: widget.builder);
+    return DeviceLabScope(
+      notifier: _controller,
+      child: _PreviewShortcuts(
+        controller: _controller,
+        child: _DeviceLabHost(
+          app: app,
+          availableLocales: widget.availableLocales,
+          backgroundColor: widget.backgroundColor,
+          showRestoreButton: widget.showRestoreButton,
         ),
-      );
+      ),
+    );
+  }
 }
 
 /// Exposes the [DeviceLabController] to the subtree, including across the
 /// boundary into your own `MaterialApp`.
 class DeviceLabScope extends InheritedNotifier<DeviceLabController> {
+  /// Creates a scope around [child].
   const DeviceLabScope({
     super.key,
     required DeviceLabController super.notifier,
@@ -252,13 +251,6 @@ class _DeviceLabHost extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = DeviceLab.of(context);
     if (!controller.enabled) return app;
-    if (!controller.previewing) {
-      return _OriginalScreen(
-        controller: controller,
-        showRestoreButton: showRestoreButton,
-        child: app,
-      );
-    }
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -273,28 +265,133 @@ class _DeviceLabHost extends StatelessWidget {
         controller: controller,
         availableLocales: availableLocales,
         backgroundColor: backgroundColor,
+        showRestoreButton: showRestoreButton,
         child: app,
       ),
     );
   }
 }
 
-class _OriginalScreen extends StatefulWidget {
-  const _OriginalScreen({
+class _HostShell extends StatelessWidget {
+  const _HostShell({
     required this.controller,
+    required this.availableLocales,
     required this.showRestoreButton,
     required this.child,
+    this.backgroundColor,
   });
 
   final DeviceLabController controller;
+  final List<Locale> availableLocales;
   final bool showRestoreButton;
   final Widget child;
+  final Color? backgroundColor;
 
   @override
-  State<_OriginalScreen> createState() => _OriginalScreenState();
+  Widget build(BuildContext context) {
+    final panelVisible = controller.previewing && controller.toolsVisible;
+
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 900;
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: Flex(
+                  direction: wide ? Axis.horizontal : Axis.vertical,
+                  children: [
+                    SizedBox(
+                      width: wide && panelVisible ? 320 : null,
+                      height: !wide && panelVisible ? 280 : null,
+                      child: panelVisible
+                          ? ToolsPanel(
+                              controller: controller,
+                              availableLocales: availableLocales,
+                            )
+                          : null,
+                    ),
+                    Expanded(
+                      child: ColoredBox(
+                        color: controller.previewing
+                            ? (backgroundColor ?? const Color(0xFF15151A))
+                            : const Color(0x00000000),
+                        child: DeviceStage(
+                          controller: controller,
+                          child: child,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned.fill(
+                child: _Chrome(
+                  controller: controller,
+                  showRestoreButton: showRestoreButton,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }
 
-class _OriginalScreenState extends State<_OriginalScreen> {
+class _Chrome extends StatelessWidget {
+  const _Chrome({required this.controller, required this.showRestoreButton});
+
+  final DeviceLabController controller;
+  final bool showRestoreButton;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!controller.previewing) {
+      if (!showRestoreButton) return const SizedBox.shrink();
+      return _RestoreLayer(controller: controller);
+    }
+    if (controller.toolsVisible) return const SizedBox.shrink();
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topRight,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FloatingActionButton.small(
+                heroTag: 'device-lab-tools',
+                tooltip: 'Show tools',
+                onPressed: () => controller.setToolsVisible(true),
+                child: const Icon(Icons.tune),
+              ),
+              const SizedBox(height: 8),
+              FloatingActionButton.small(
+                heroTag: 'device-lab-exit',
+                tooltip: 'Show original screen',
+                onPressed: () => controller.setPreviewing(false),
+                child: const Icon(Icons.fullscreen),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RestoreLayer extends StatefulWidget {
+  const _RestoreLayer({required this.controller});
+
+  final DeviceLabController controller;
+
+  @override
+  State<_RestoreLayer> createState() => _RestoreLayerState();
+}
+
+class _RestoreLayerState extends State<_RestoreLayer> {
   bool _dragging = false;
 
   Alignment get _alignment => widget.controller.restoreAlignment;
@@ -315,46 +412,31 @@ class _OriginalScreenState extends State<_OriginalScreen> {
       Alignment(a.x < 0 ? -1 : 1, a.y < 0 ? -1 : 1);
 
   @override
-  Widget build(BuildContext context) {
-    if (!widget.showRestoreButton) return widget.child;
-
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: Stack(
-        children: [
-          Positioned.fill(child: widget.child),
-          Positioned.fill(
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: AnimatedAlign(
-                  alignment: _alignment,
-                  duration: _dragging
-                      ? Duration.zero
-                      : const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  child: GestureDetector(
-                    onPanStart: (d) {
-                      setState(() => _dragging = true);
-                      _moveTo(d.globalPosition);
-                    },
-                    onPanUpdate: (d) => _moveTo(d.globalPosition),
-                    onPanEnd: (_) {
-                      widget.controller.setRestoreAlignment(_dock(_alignment));
-                      setState(() => _dragging = false);
-                    },
-                    child: _RestorePill(
-                      onTap: () => widget.controller.setPreviewing(true),
-                    ),
-                  ),
-                ),
+  Widget build(BuildContext context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: AnimatedAlign(
+            alignment: _alignment,
+            duration:
+                _dragging ? Duration.zero : const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            child: GestureDetector(
+              onPanStart: (d) {
+                setState(() => _dragging = true);
+                _moveTo(d.globalPosition);
+              },
+              onPanUpdate: (d) => _moveTo(d.globalPosition),
+              onPanEnd: (_) {
+                widget.controller.setRestoreAlignment(_dock(_alignment));
+                setState(() => _dragging = false);
+              },
+              child: _RestorePill(
+                onTap: () => widget.controller.setPreviewing(true),
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      );
 }
 
 class _RestorePill extends StatelessWidget {
@@ -393,91 +475,4 @@ class _RestorePill extends StatelessWidget {
       );
 }
 
-class _HostShell extends StatelessWidget {
-  const _HostShell({
-    required this.controller,
-    required this.availableLocales,
-    required this.child,
-    this.backgroundColor,
-  });
-
-  final DeviceLabController controller;
-  final List<Locale> availableLocales;
-  final Widget child;
-  final Color? backgroundColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final stage = ColoredBox(
-      color: backgroundColor ?? const Color(0xFF15151A),
-      child: DeviceStage(controller: controller, child: child),
-    );
-
-    return Scaffold(
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 900;
-          if (!controller.toolsVisible) {
-            return Stack(
-              children: [
-                Positioned.fill(child: stage),
-                Positioned(
-                  right: 12,
-                  top: 12,
-                  child: Column(
-                    children: [
-                      FloatingActionButton.small(
-                        heroTag: 'device-lab-tools',
-                        tooltip: 'Show tools',
-                        onPressed: () => controller.setToolsVisible(true),
-                        child: const Icon(Icons.tune),
-                      ),
-                      const SizedBox(height: 8),
-                      FloatingActionButton.small(
-                        heroTag: 'device-lab-exit',
-                        tooltip: 'Show original screen',
-                        onPressed: () => controller.setPreviewing(false),
-                        child: const Icon(Icons.fullscreen),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          }
-          if (wide) {
-            return Row(
-              children: [
-                SizedBox(
-                  width: 320,
-                  child: ToolsPanel(
-                    controller: controller,
-                    availableLocales: availableLocales,
-                  ),
-                ),
-                const VerticalDivider(width: 1),
-                Expanded(child: stage),
-              ],
-            );
-          }
-          return Column(
-            children: [
-              Expanded(child: stage),
-              const Divider(height: 1),
-              SizedBox(
-                height: 280,
-                child: ToolsPanel(
-                  controller: controller,
-                  availableLocales: availableLocales,
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// Whether device_lab should run, that is every build except release.
 bool get isDeviceLabAvailable => !kReleaseMode;

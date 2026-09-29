@@ -1,3 +1,18 @@
+## 0.2.1
+
+- Fixed the app being rebuilt from a stale `builder` closure, so hot reload
+  now reaches the previewed app. Previously the closure was captured once and
+  never refreshed, which left the app running old code and could throw from
+  providers and other scopes the reload had replaced.
+- Fixed the whole app subtree being torn down and re-mounted whenever the
+  preview was shown, hidden or resized. The app now keeps an identical
+  ancestor chain in both modes, so it is updated in place. Inherited widgets
+  such as `ProviderScope` declared inside `builder` stay reachable throughout.
+- The host no longer resizes for the software keyboard, leaving the previewed
+  app's own inset handling untouched.
+- In narrow layouts the tools panel now sits above the stage rather than
+  below it, so switching between layouts does not re-mount the app either.
+
 ## 0.2.0
 
 - `enabled` now defaults to `!kReleaseMode` instead of `true`, so the preview

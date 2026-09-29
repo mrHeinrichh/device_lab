@@ -565,6 +565,93 @@ void main() {
     });
   });
 
+  group('rebuild safety', () {
+    testWidgets('the builder is re-read on hot reload', (t) async {
+      Widget harness(String label) => DeviceLab(
+            builder: (_) => MaterialApp(
+              builder: DeviceLab.appBuilder,
+              home: Text(label, textDirection: TextDirection.ltr),
+            ),
+          );
+
+      await t.pumpWidget(harness('A'));
+      await t.pumpAndSettle();
+      expect(find.text('A'), findsOneWidget);
+
+      await t.pumpWidget(harness('B'));
+      await t.pumpAndSettle();
+      expect(find.text('B'), findsOneWidget);
+    });
+
+    testWidgets('toggling the preview never remounts the app', (t) async {
+      _MountCounter.mounts = 0;
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+
+      await t.pumpWidget(
+        DeviceLab(
+          controller: c,
+          builder: (_) => MaterialApp(
+            builder: DeviceLab.appBuilder,
+            home: const _MountCounter(),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(_MountCounter.mounts, 1);
+
+      c.setPreviewing(false);
+      await t.pumpAndSettle();
+      expect(_MountCounter.mounts, 1, reason: 'remounted on hide');
+
+      c.setPreviewing(true);
+      await t.pumpAndSettle();
+      expect(_MountCounter.mounts, 1, reason: 'remounted on restore');
+
+      c.setToolsVisible(false);
+      await t.pumpAndSettle();
+      c.setToolsVisible(true);
+      await t.pumpAndSettle();
+      expect(_MountCounter.mounts, 1, reason: 'remounted on tools toggle');
+
+      c.selectDeviceId('samsung.galaxy-z-flip-7');
+      c.setTextScale(2);
+      c.setShowFrame(false);
+      await t.pumpAndSettle();
+      expect(_MountCounter.mounts, 1, reason: 'remounted on device change');
+    });
+
+    testWidgets('an InheritedWidget inside the app stays reachable', (t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(
+        DeviceLab(
+          controller: c,
+          builder: (_) => _Scope(
+            value: 42,
+            child: MaterialApp(
+              builder: DeviceLab.appBuilder,
+              home: Builder(
+                builder: (context) => Text(
+                  '${_Scope.of(context)}',
+                  textDirection: TextDirection.ltr,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.text('42'), findsOneWidget);
+
+      c.setPreviewing(false);
+      await t.pumpAndSettle();
+      expect(find.text('42'), findsOneWidget);
+
+      c.setPreviewing(true);
+      await t.pumpAndSettle();
+      expect(find.text('42'), findsOneWidget);
+    });
+  });
+
   group('golden helpers', () {
     testWidgets('applyDevice configures the test view', (t) async {
       final fold = DeviceCatalog.byId('google.pixel-10-pro-fold')!;
@@ -611,4 +698,39 @@ class _CounterState extends State<_Counter> {
           ),
         ),
       );
+}
+
+class _MountCounter extends StatefulWidget {
+  const _MountCounter();
+
+  static int mounts = 0;
+
+  @override
+  State<_MountCounter> createState() => _MountCounterState();
+}
+
+class _MountCounterState extends State<_MountCounter> {
+  @override
+  void initState() {
+    super.initState();
+    _MountCounter.mounts++;
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+class _Scope extends InheritedWidget {
+  const _Scope({required this.value, required super.child});
+
+  final int value;
+
+  static int of(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<_Scope>();
+    if (scope == null) throw StateError('No _Scope found');
+    return scope.value;
+  }
+
+  @override
+  bool updateShouldNotify(_Scope old) => old.value != value;
 }
