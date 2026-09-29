@@ -6,6 +6,7 @@ import '../model/device_spec.dart';
 import 'android_devices.dart';
 import 'apple_devices.dart';
 import 'desktop_devices.dart';
+import 'flip_devices.dart';
 import 'generic_devices.dart';
 import 'oem_devices.dart';
 
@@ -159,6 +160,16 @@ abstract final class DeviceSpecCodec {
               width: (spine['width'] as num?)?.toDouble() ?? 9,
               color: Color(spine['color'] as int? ?? 0xFF8E8A80),
             ),
+      lenses: ((json['lenses'] as List<dynamic>?) ?? const [])
+          .cast<Map<String, dynamic>>()
+          .map((l) => FrameLens(
+                center: Offset(
+                  (l['cx'] as num).toDouble(),
+                  (l['cy'] as num).toDouble(),
+                ),
+                radius: (l['r'] as num).toDouble(),
+              ))
+          .toList(),
     );
   }
 
@@ -183,6 +194,10 @@ abstract final class DeviceSpecCodec {
             'width': f.spine!.width,
             'color': f.spine!.color.toARGB32(),
           },
+        if (f.lenses.isNotEmpty)
+          'lenses': f.lenses
+              .map((l) => {'cx': l.center.dx, 'cy': l.center.dy, 'r': l.radius})
+              .toList(),
       };
 
   static DeviceScreen _screenFromJson(Map<String, dynamic> json) =>

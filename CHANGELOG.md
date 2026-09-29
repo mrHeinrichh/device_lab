@@ -1,3 +1,27 @@
+## 0.3.2
+
+- Corrected several flip cover screens, which were wrong. The cover sizes and
+  therefore the dp your layouts see change:
+  - Galaxy Z Flip 7: 948x1048 px (was 1101x1047). 316 x 349 dp, was 367 x 349.
+  - Galaxy Z Flip 4: a wide 512x260 strip (was a 519x519 square).
+  - Motorola Razr 50 Ultra: 1080x1272 px (was 1239x1119).
+  - Motorola Razr (2023), the razr 40: 368x194 px (was 582x582).
+  Layout tests pinned to the old cover sizes will need updating.
+- Added the Galaxy Z Flip8.
+- Flip phones are redrawn like the iPhone Duo: a body for each posture sized
+  from the vendor's millimetres, a metal rim, side keys, a hinge strip along
+  the bottom of the closed body, and lenses either set in the body beside a
+  small cover screen or cut into a full-face one. Rotating turns the whole body.
+- Open bodies are derived from the vendors' body sizes and reproduce their
+  published screen-to-body ratios to within about a point.
+- Added `FrameLens` and `DeviceFrame.lenses`, carried through the JSON codec.
+- The custom resolution fields now follow the selected device and posture
+  instead of keeping the value they started with, and leave a field alone while
+  you are typing in it.
+- The example app splits along the fold it is given, stacking for a flip and
+  side by side for a book fold, and takes its starting device from
+  `--dart-define=DEVICE=`.
+
 ## 0.3.1
 
 - Rotating now turns the whole device. The camera cutout, side buttons, hinge

@@ -1,9 +1,9 @@
 name: device_lab
 description: >-
-  Preview your Flutter app on any device without a simulator: 149 devices,
+  Preview your Flutter app on any device without a simulator: 150 devices,
   foldables with real display features, free-form resolutions, and
   golden-test integration.
-version: 0.3.1
+version: 0.3.2
 repository: https://github.com/mrHeinrichh/device_lab
 issue_tracker: https://github.com/mrHeinrichh/device_lab/issues
 screenshots:
@@ -15,6 +15,14 @@ screenshots:
       The closed Duo turned to landscape: camera, buttons and spine turn with
       the body, and the bar shows the resolution with zoom controls.
     path: screenshots/duo-closed-rotated.png
+  - description: >-
+      The Galaxy Z Flip8 unfolded, its horizontal fold reported to the app so
+      the layout splits exactly on the crease.
+    path: screenshots/flip-open.png
+  - description: >-
+      The Galaxy Z Flip 6 closed: lenses above a 240 by 249 dp cover screen,
+      hinge along the bottom and keys on the left edge.
+    path: screenshots/flip-closed.png
   - description: >-
       The preview hidden, showing the app at the real window size with a
       draggable restore button docked to a corner.

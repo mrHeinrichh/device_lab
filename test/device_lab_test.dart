@@ -731,7 +731,7 @@ void main() {
 
       c.setPosture(FoldPosture.folded);
       await t.pumpAndSettle();
-      expect(find.textContaining('367 × 349 dp'), findsOneWidget);
+      expect(find.textContaining('316 × 349 dp'), findsOneWidget);
     });
   });
 
@@ -1058,6 +1058,239 @@ void main() {
       first.setZoom(null);
       expect(DeviceLabController(storage: store).isFit, isTrue);
       SessionDeviceLabStorage.clear();
+    });
+  });
+
+  group('flip phones', () {
+    DeviceSpec flip(String id) => DeviceCatalog.byId(id)!;
+
+    const vendor = {
+      'samsung.galaxy-z-flip-8': (Size(1080, 2520), Size(948, 1048)),
+      'samsung.galaxy-z-flip-7': (Size(1080, 2520), Size(948, 1048)),
+      'samsung.galaxy-z-flip-6': (Size(1080, 2640), Size(720, 748)),
+      'samsung.galaxy-z-flip-5': (Size(1080, 2640), Size(720, 748)),
+      'samsung.galaxy-z-flip-4': (Size(1080, 2640), Size(512, 260)),
+      'motorola.razr-50-ultra': (Size(1080, 2640), Size(1080, 1272)),
+      'motorola.razr-2023': (Size(1080, 2640), Size(368, 194)),
+    };
+
+    test('every flip matches the vendor pixel resolutions', () {
+      for (final entry in vendor.entries) {
+        final d = flip(entry.key);
+        expect(d.screens.first.resolution, entry.value.$1, reason: entry.key);
+        expect(d.screens.last.resolution, entry.value.$2, reason: entry.key);
+      }
+      expect(flipDevices.map((d) => d.id).toSet(), vendor.keys.toSet());
+    });
+
+    test('the Flip 8 is in the catalog and is a flip', () {
+      final d = flip('samsung.galaxy-z-flip-8');
+      expect(d.category, DeviceCategory.foldable);
+      expect(d.releaseYear, 2026);
+      expect(d.primaryScreen.hinge?.axis, Axis.horizontal);
+    });
+
+    test('pixel densities agree with what the vendors publish', () {
+      const ppi = {
+        'motorola.razr-50-ultra': (413.0, 417.0),
+        'motorola.razr-2023': (413.0, 282.0),
+        'samsung.galaxy-z-flip-6': (426.0, 305.0),
+        'samsung.galaxy-z-flip-5': (426.0, 305.0),
+        'samsung.galaxy-z-flip-7': (397.0, 343.0),
+      };
+      for (final entry in ppi.entries) {
+        final d = flip(entry.key);
+        expect(d.screens.first.ppi, closeTo(entry.value.$1, 4),
+            reason: entry.key);
+        expect(d.screens.last.ppi, closeTo(entry.value.$2, 4),
+            reason: entry.key);
+      }
+    });
+
+    test('open bodies reproduce the vendors screen-to-body ratios', () {
+      const quoted = {
+        'samsung.galaxy-z-flip-8': 87.1,
+        'samsung.galaxy-z-flip-7': 88.7,
+        'samsung.galaxy-z-flip-6': 85.5,
+        'samsung.galaxy-z-flip-5': 85.9,
+        'samsung.galaxy-z-flip-4': 85.4,
+        'motorola.razr-50-ultra': 85.33,
+        'motorola.razr-2023': 85.5,
+      };
+      for (final entry in quoted.entries) {
+        final s = flip(entry.key).primaryScreen;
+        final bezel = s.frame!.bezel;
+        final ratio = s.logicalSize.width *
+            s.logicalSize.height /
+            ((s.logicalSize.width + bezel.horizontal) *
+                (s.logicalSize.height + bezel.vertical)) *
+            100;
+        expect(ratio, closeTo(entry.value, 1.3), reason: entry.key);
+      }
+    });
+
+    test('no screen is larger than the body it sits in', () {
+      for (final d in flipDevices) {
+        for (final s in d.screens) {
+          final b = s.frame!.bezel;
+          expect(
+            [b.left, b.top, b.right, b.bottom].every((v) => v >= 0),
+            isTrue,
+            reason: '${d.id} ${s.label}',
+          );
+        }
+      }
+    });
+
+    test('the closed chin is deep enough to hold the hinge', () {
+      for (final d in flipDevices) {
+        final closed = d.screens.last.frame!;
+        expect(
+          closed.bezel.bottom,
+          greaterThanOrEqualTo(closed.spine!.width),
+          reason: d.id,
+        );
+      }
+    });
+
+    test('each posture has its own body, with the hinge only when closed', () {
+      for (final d in flipDevices) {
+        final open = d.frameFor(d.screens.first);
+        final closed = d.frameFor(d.screens.last);
+        expect(open, isNot(same(closed)), reason: d.id);
+        expect(open.spine, isNull, reason: d.id);
+        expect(closed.spine?.side, AxisDirection.down, reason: d.id);
+        expect(open.buttons, hasLength(2), reason: d.id);
+        expect(closed.buttons, hasLength(2), reason: d.id);
+        expect(closed.buttons.first.side, AxisDirection.left, reason: d.id);
+        expect(open.buttons.first.side, AxisDirection.right, reason: d.id);
+      }
+    });
+
+    test('full-face covers carry their cameras in the screen', () {
+      for (final id in [
+        'samsung.galaxy-z-flip-8',
+        'samsung.galaxy-z-flip-7',
+        'motorola.razr-50-ultra',
+      ]) {
+        final cover = flip(id).screens.last;
+        expect(cover.cutouts, hasLength(2), reason: id);
+        expect(cover.frame!.lenses, isEmpty, reason: id);
+        final rects = cover.cutoutRectsFor(Orientation.portrait);
+        for (final r in rects) {
+          expect(r.left, greaterThanOrEqualTo(0), reason: id);
+          expect(r.top, greaterThanOrEqualTo(0), reason: id);
+          expect(r.right, lessThan(cover.logicalSize.width / 2), reason: id);
+        }
+      }
+    });
+
+    test('small covers keep their cameras beside the screen', () {
+      for (final id in [
+        'samsung.galaxy-z-flip-6',
+        'samsung.galaxy-z-flip-5',
+        'samsung.galaxy-z-flip-4',
+        'motorola.razr-2023',
+      ]) {
+        final cover = flip(id).screens.last;
+        expect(cover.cutouts, isEmpty, reason: id);
+        expect(cover.frame!.lenses, hasLength(2), reason: id);
+      }
+    });
+
+    test('the Flip 4 cover is a wide strip, not a square', () {
+      final cover = flip('samsung.galaxy-z-flip-4').screens.last;
+      expect(cover.logicalSize.width, greaterThan(cover.logicalSize.height));
+      expect(cover.resolution, const Size(512, 260));
+    });
+
+    test('lenses survive a json round trip', () {
+      final d = flip('samsung.galaxy-z-flip-6');
+      final restored = DeviceSpecCodec.fromJson(DeviceSpecCodec.toJson(d));
+      final lenses = restored.screens.last.frame!.lenses;
+      expect(lenses, hasLength(2));
+      expect(lenses.first.center, d.screens.last.frame!.lenses.first.center);
+      expect(lenses.first.radius, d.screens.last.frame!.lenses.first.radius);
+    });
+
+    testWidgets('a closed flip turns its whole body when rotated', (t) async {
+      final c = DeviceLabController(initialDeviceId: 'samsung.galaxy-z-flip-7')
+        ..setPosture(FoldPosture.folded);
+      await t.pumpWidget(
+        DeviceLab(
+          controller: c,
+          builder: (_) => MaterialApp(
+            builder: DeviceLab.appBuilder,
+            home: const SizedBox(),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+
+      DeviceBodyPainter painter() => t
+          .widgetList<CustomPaint>(find.byType(CustomPaint))
+          .map((w) => w.painter)
+          .whereType<DeviceBodyPainter>()
+          .single;
+
+      expect(painter().turns, 0);
+      expect(painter().frame.spine?.side, AxisDirection.down);
+
+      c.setOrientation(Orientation.landscape);
+      await t.pumpAndSettle();
+      expect(painter().turns, 1);
+      expect(c.logicalSize, const Size(349.3333333333333, 316));
+    });
+  });
+
+  group('custom resolution fields', () {
+    Widget harness(DeviceLabController c) => DeviceLab(
+          controller: c,
+          builder: (_) => MaterialApp(
+            builder: DeviceLab.appBuilder,
+            home: const SizedBox(),
+          ),
+        );
+
+    String text(WidgetTester t, int index) =>
+        t.widget<TextField>(find.byType(TextField).at(index)).controller!.text;
+
+    testWidgets('follow the selected device and posture', (t) async {
+      t.view.physicalSize = const Size(1200, 1600);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      expect(text(t, 1), '402');
+      expect(text(t, 2), '874');
+
+      c.selectDeviceId('samsung.galaxy-z-flip-6');
+      c.setPosture(FoldPosture.folded);
+      await t.pumpAndSettle();
+      expect(text(t, 1), '240');
+      expect(text(t, 2), '249');
+
+      c.setOrientation(Orientation.landscape);
+      await t.pumpAndSettle();
+      expect(text(t, 1), '249');
+      expect(text(t, 2), '240');
+    });
+
+    testWidgets('leave what is being typed alone', (t) async {
+      t.view.physicalSize = const Size(1200, 1600);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+
+      await t.enterText(find.byType(TextField).at(1), '500');
+      c.setBrightness(Brightness.dark);
+      await t.pumpAndSettle();
+      expect(text(t, 1), '500');
     });
   });
 

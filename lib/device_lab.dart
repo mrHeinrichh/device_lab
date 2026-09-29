@@ -6,7 +6,8 @@ library;
 export 'dart:ui' show DisplayFeature, DisplayFeatureType, DisplayFeatureState;
 
 export 'src/catalog/android_devices.dart'
-    show pixelDevices, samsungDevices, foldableDevices, flipDevices;
+    show pixelDevices, samsungDevices, foldableDevices;
+export 'src/catalog/flip_devices.dart' show flipDevices;
 export 'src/catalog/generic_devices.dart'
     show genericResolutions, wearableDevices;
 export 'src/catalog/oem_devices.dart' show oemDevices;

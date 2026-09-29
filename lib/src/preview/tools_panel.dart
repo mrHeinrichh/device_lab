@@ -287,12 +287,41 @@ class _FreeformControlsState extends State<_FreeformControls> {
   late final TextEditingController _h = TextEditingController(
     text: widget.controller.logicalSize.height.toStringAsFixed(0),
   );
+  final FocusNode _wFocus = FocusNode();
+  final FocusNode _hFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_follow);
+  }
+
+  @override
+  void didUpdateWidget(_FreeformControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_follow);
+      widget.controller.addListener(_follow);
+    }
+  }
 
   @override
   void dispose() {
+    widget.controller.removeListener(_follow);
     _w.dispose();
     _h.dispose();
+    _wFocus.dispose();
+    _hFocus.dispose();
     super.dispose();
+  }
+
+  void _follow() {
+    if (_wFocus.hasFocus || _hFocus.hasFocus) return;
+    final size = widget.controller.logicalSize;
+    final width = size.width.toStringAsFixed(0);
+    final height = size.height.toStringAsFixed(0);
+    if (_w.text != width) _w.text = width;
+    if (_h.text != height) _h.text = height;
   }
 
   void _apply() {
@@ -310,6 +339,7 @@ class _FreeformControlsState extends State<_FreeformControls> {
               Expanded(
                 child: TextField(
                   controller: _w,
+                  focusNode: _wFocus,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
                     labelText: 'Width',
@@ -323,6 +353,7 @@ class _FreeformControlsState extends State<_FreeformControls> {
               Expanded(
                 child: TextField(
                   controller: _h,
+                  focusNode: _hFocus,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
                     labelText: 'Height',

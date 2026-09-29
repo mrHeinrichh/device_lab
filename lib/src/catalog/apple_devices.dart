@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../model/device_spec.dart';
+import 'physical.dart';
 
 const _island = ScreenCutout(
   shape: CutoutShape.dynamicIsland,
@@ -123,27 +124,14 @@ DeviceSpec _tablet({
 const _titanium = Color(0xFFBDB6A8);
 const _duoGlass = Color(0xFF0B0B0D);
 
-EdgeInsets _bezelFromBody({
-  required Size screen,
-  required Size pixels,
-  required double ppi,
-  required Size bodyMm,
-}) {
-  final pointsPerMm = screen.width / (pixels.width / ppi * 25.4);
-  return EdgeInsets.symmetric(
-    horizontal: (bodyMm.width * pointsPerMm - screen.width) / 2,
-    vertical: (bodyMm.height * pointsPerMm - screen.height) / 2,
-  );
-}
-
 DeviceSpec _iphoneDuo() {
-  final openBezel = _bezelFromBody(
+  final openBezel = bezelFromBody(
     screen: const Size(890, 626),
     pixels: const Size(2670, 1878),
     ppi: 430,
     bodyMm: const Size(164.6, 117.8),
   );
-  final closedBezel = _bezelFromBody(
+  final closedBezel = bezelFromBody(
     screen: const Size(466, 678),
     pixels: const Size(1398, 2034),
     ppi: 460,

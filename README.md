@@ -11,7 +11,7 @@ text scale and accessibility flags.
   <img src="https://raw.githubusercontent.com/mrHeinrichh/device_lab/master/screenshots/duo-closed-rotated.png" width="49%" alt="The closed iPhone Duo turned to landscape, with its camera, buttons and spine turned with it">
 </p>
 
-149 built-in devices across 16 vendors — iPhone (including **iPhone Duo**, the
+150 built-in devices across 17 vendors — iPhone (including **iPhone Duo**, the
 foldable), Pixel, Galaxy S/A, book-folds, flip phones, iPads, Android tablets,
 laptops, watches, TV, plus generic resolution presets from 320×568 to 4K. And
 any size at all via free-form mode.
@@ -56,6 +56,18 @@ Book-folds (Galaxy Z Fold, Pixel Pro Fold, iPhone Duo, OnePlus Open) fold on a
 vertical hinge; flip phones (Z Flip, Motorola Razr) fold on a horizontal one.
 Both are modelled the same way — two screens plus a `HingeSpec` — and the hinge
 axis rotates with the device when you flip orientation.
+
+Flip phones get the same treatment as the iPhone Duo. Body sizes, screen
+resolutions and pixel densities come from Samsung's and Motorola's own spec
+sheets, and every open body is checked against the screen-to-body ratio the
+vendors publish. The cover screens are the real ones, from the Flip4's wide
+strip to the Flip8's full-face display, with lenses set in the body where they
+sit beside the screen and cut into the screen where they sit inside it.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mrHeinrichh/device_lab/master/screenshots/flip-open.png" width="49%" alt="The Galaxy Z Flip8 unfolded, with its horizontal fold reported to the app">
+  <img src="https://raw.githubusercontent.com/mrHeinrichh/device_lab/master/screenshots/flip-closed.png" width="49%" alt="The Galaxy Z Flip 6 closed, with lenses above a small cover screen">
+</p>
 
 The iPhone Duo is drawn from Apple's published body and display dimensions:
 titanium rim, a square spine side against a round outer side, a round camera on

@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 void main() {
   runApp(
     DeviceLab(
-      initialDeviceId: 'apple.iphone-duo',
+      initialDeviceId: const String.fromEnvironment(
+        'DEVICE',
+        defaultValue: 'apple.iphone-duo',
+      ),
       restoreButtonAlignment: Alignment.bottomLeft,
       availableLocales: const [Locale('en'), Locale('ja'), Locale('ar')],
       builder: (_) => const DemoApp(),
@@ -54,13 +57,30 @@ class HomePage extends StatelessWidget {
       ),
       body: fold == null
           ? _Panel(media: media)
-          : Row(
-              children: [
-                Expanded(child: _Panel(media: media)),
-                const VerticalDivider(width: 1),
-                const Expanded(child: _DetailPane()),
-              ],
-            ),
+          : media.isBookPosture
+              ? Row(
+                  children: [
+                    SizedBox(
+                      width: fold.bounds.center.dx - 0.5,
+                      child: _Panel(media: media),
+                    ),
+                    const VerticalDivider(width: 1),
+                    const Expanded(child: _DetailPane()),
+                  ],
+                )
+              : Column(
+                  children: [
+                    SizedBox(
+                      height: fold.bounds.center.dy -
+                          media.padding.top -
+                          kToolbarHeight -
+                          0.5,
+                      child: _Panel(media: media),
+                    ),
+                    const Divider(height: 1),
+                    const Expanded(child: _DetailPane()),
+                  ],
+                ),
     );
   }
 }

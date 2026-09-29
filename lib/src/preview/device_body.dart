@@ -42,6 +42,7 @@ class DeviceBodyPainter extends CustomPainter {
       Paint()..color = frame.bodyColor,
     );
     _paintSpine(canvas, body, natural);
+    _paintLenses(canvas);
     canvas.restore();
   }
 
@@ -75,6 +76,32 @@ class DeviceBodyPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 0.6
           ..color = highlight,
+      );
+    }
+  }
+
+  void _paintLenses(Canvas canvas) {
+    final ring = Color.lerp(frame.edgeColor, const Color(0xFF000000), 0.55)!;
+    final rim = Color.lerp(frame.edgeColor, const Color(0xFFFFFFFF), 0.25)!;
+    for (final lens in frame.lenses) {
+      canvas.drawCircle(lens.center, lens.radius, Paint()..color = ring);
+      canvas.drawCircle(
+        lens.center,
+        lens.radius,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.9
+          ..color = rim,
+      );
+      canvas.drawCircle(
+        lens.center,
+        lens.radius * 0.66,
+        Paint()..color = const Color(0xFF050507),
+      );
+      canvas.drawCircle(
+        lens.center.translate(-lens.radius * 0.2, -lens.radius * 0.2),
+        lens.radius * 0.16,
+        Paint()..color = const Color(0x33FFFFFF),
       );
     }
   }

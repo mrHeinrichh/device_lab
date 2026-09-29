@@ -318,6 +318,7 @@ class DeviceFrame {
     this.rimWidth = 3,
     this.buttons = const [],
     this.spine,
+    this.lenses = const [],
   });
 
   /// A frame that draws nothing, used for bare viewports.
@@ -356,6 +357,26 @@ class DeviceFrame {
 
   /// The hinge spine seen edge-on along one side of a closed foldable.
   final FrameSpine? spine;
+
+  /// Camera lens rings set into the body outside the screen.
+  ///
+  /// Used where the outer face of a closed flip carries its cameras beside a
+  /// small cover screen rather than inside a full-face one.
+  final List<FrameLens> lenses;
+}
+
+/// A camera lens ring on the body of a closed foldable, outside the screen.
+@immutable
+class FrameLens {
+  /// Creates a lens with its [center] and [radius], measured from the body's
+  /// top-left corner in the frame's natural orientation.
+  const FrameLens({required this.center, required this.radius});
+
+  /// Where the lens sits on the body.
+  final Offset center;
+
+  /// Radius of the outer ring.
+  final double radius;
 }
 
 /// The hinge spine of a closed foldable, seen edge-on along one side.
