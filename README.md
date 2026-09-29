@@ -138,7 +138,7 @@ Three levels, smallest to largest:
 
 | Control | Effect |
 |---|---|
-| Hide tools panel | device frame stays, panel collapses to a button |
+| Collapse the panel | device frame stays, a compact bar keeps the device and resolution visible |
 | **Show original screen** | app fills the window, no frame, no `MediaQuery` override |
 | `enabled: false` | lab is inert, zero overhead |
 

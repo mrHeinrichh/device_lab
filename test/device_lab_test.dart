@@ -1,5 +1,7 @@
 import 'package:device_lab/device_lab.dart';
 import 'package:device_lab/device_lab_testing.dart';
+import 'package:device_lab/src/preview/device_stage.dart';
+import 'package:device_lab/src/preview/tools_panel.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -649,6 +651,85 @@ void main() {
       c.setPreviewing(true);
       await t.pumpAndSettle();
       expect(find.text('42'), findsOneWidget);
+    });
+  });
+
+  group('collapsed details', () {
+    testWidgets('collapsing keeps the device and resolution visible',
+        (t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(
+        DeviceLab(
+          controller: c,
+          builder: (_) => MaterialApp(
+            builder: DeviceLab.appBuilder,
+            home: const SizedBox(),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.text('Show original screen'), findsOneWidget);
+      expect(find.text('Device Lab'), findsOneWidget);
+
+      c.setToolsVisible(false);
+      await t.pumpAndSettle();
+
+      expect(find.text('iPhone 17 Pro'), findsOneWidget);
+      expect(find.textContaining('402 × 874 dp'), findsOneWidget);
+      expect(find.text('Show original screen'), findsNothing);
+      expect(find.text('Device Lab'), findsNothing);
+      expect(find.byType(TextField), findsNothing);
+
+      await t.tap(find.byTooltip('Show options'));
+      await t.pumpAndSettle();
+      expect(find.text('Show original screen'), findsOneWidget);
+    });
+
+    testWidgets('the panel sits below the stage in narrow layouts', (t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(
+        DeviceLab(
+          controller: c,
+          builder: (_) => MaterialApp(
+            builder: DeviceLab.appBuilder,
+            home: const SizedBox(),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+
+      final stage = t.getRect(find.byType(DeviceStage));
+      final panel = t.getRect(find.byType(ToolsPanel));
+      expect(panel.top, greaterThanOrEqualTo(stage.bottom - 1));
+
+      c.setToolsVisible(false);
+      await t.pumpAndSettle();
+      final bar = t.getRect(find.text('iPhone 17 Pro'));
+      expect(bar.top, greaterThan(t.getRect(find.byType(DeviceStage)).top));
+    });
+
+    testWidgets('the collapsed bar follows the selected device', (t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro')
+        ..setToolsVisible(false);
+      await t.pumpWidget(
+        DeviceLab(
+          controller: c,
+          builder: (_) => MaterialApp(
+            builder: DeviceLab.appBuilder,
+            home: const SizedBox(),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+
+      c.selectDeviceId('samsung.galaxy-z-flip-7');
+      await t.pumpAndSettle();
+      expect(find.text('Galaxy Z Flip 7'), findsOneWidget);
+      expect(find.textContaining('360 × 840 dp'), findsOneWidget);
+
+      c.setPosture(FoldPosture.folded);
+      await t.pumpAndSettle();
+      expect(find.textContaining('367 × 349 dp'), findsOneWidget);
     });
   });
 

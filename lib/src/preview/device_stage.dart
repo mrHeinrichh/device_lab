@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../model/device_spec.dart';
 import 'device_lab_controller.dart';
 
+const _minScale = 0.2;
+const _maxScale = 1.6;
+
 class DeviceStage extends StatelessWidget {
   const DeviceStage({
     super.key,
@@ -35,11 +38,11 @@ class DeviceStage extends StatelessWidget {
           size.width + bezel.horizontal,
           size.height + bezel.vertical,
         );
-        final fitWidth = (constraints.maxWidth - 48) / outer.width;
-        final fitHeight = (constraints.maxHeight - 48) / outer.height;
-        final scale = previewing
-            ? (fitWidth < fitHeight ? fitWidth : fitHeight).clamp(0.05, 1.0)
-            : 1.0;
+        final fitWidth = (constraints.maxWidth - 40) / outer.width;
+        final fitHeight = (constraints.maxHeight - 40) / outer.height;
+        final fit = fitWidth < fitHeight ? fitWidth : fitHeight;
+        final scale =
+            previewing ? fit.clamp(_minScale, _maxScale).toDouble() : 1.0;
 
         return Center(
           child: Transform.scale(

@@ -1,3 +1,14 @@
+## 0.3.0
+
+- The tools panel is back below the stage in narrow layouts. It stays a left
+  sidebar when there is room for one, and switching between the two no longer
+  re-mounts the previewed app.
+- Collapsing the panel now leaves a compact bar showing just the selected
+  device and its resolution, with rotate, show-original and expand buttons,
+  instead of hiding everything behind floating buttons.
+- The stage now scales the device up as well as down to fill the space it has,
+  between 0.2x and 1.6x, so small phones are no longer lost on a large canvas.
+
 ## 0.2.1
 
 - Fixed the app being rebuilt from a stale `builder` closure, so hot reload

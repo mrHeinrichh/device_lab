@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../model/device_spec.dart';
 import 'device_lab_controller.dart';
 import 'device_lab_storage.dart';
 import 'device_stage.dart';
@@ -289,29 +290,22 @@ class _HostShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final panelVisible = controller.previewing && controller.toolsVisible;
+    final expanded = controller.previewing && controller.toolsVisible;
+    final collapsed = controller.previewing && !controller.toolsVisible;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 900;
+          final sidebar = expanded && constraints.maxWidth >= 900;
           return Stack(
             children: [
               Positioned.fill(
                 child: Flex(
-                  direction: wide ? Axis.horizontal : Axis.vertical,
+                  direction: sidebar ? Axis.horizontal : Axis.vertical,
+                  textDirection: TextDirection.rtl,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SizedBox(
-                      width: wide && panelVisible ? 320 : null,
-                      height: !wide && panelVisible ? 280 : null,
-                      child: panelVisible
-                          ? ToolsPanel(
-                              controller: controller,
-                              availableLocales: availableLocales,
-                            )
-                          : null,
-                    ),
                     Expanded(
                       child: ColoredBox(
                         color: controller.previewing
@@ -322,6 +316,18 @@ class _HostShell extends StatelessWidget {
                           child: child,
                         ),
                       ),
+                    ),
+                    SizedBox(
+                      width: sidebar ? 320 : null,
+                      height: sidebar || !expanded ? null : 300,
+                      child: expanded
+                          ? ToolsPanel(
+                              controller: controller,
+                              availableLocales: availableLocales,
+                            )
+                          : collapsed
+                              ? _CompactBar(controller: controller)
+                              : null,
                     ),
                   ],
                 ),
@@ -340,6 +346,108 @@ class _HostShell extends StatelessWidget {
   }
 }
 
+IconData _categoryIcon(DeviceCategory category) => switch (category) {
+      DeviceCategory.phone => Icons.smartphone,
+      DeviceCategory.foldable => Icons.book_outlined,
+      DeviceCategory.tablet => Icons.tablet_mac,
+      DeviceCategory.desktop => Icons.desktop_windows,
+      DeviceCategory.watch => Icons.watch,
+      DeviceCategory.tv => Icons.tv,
+    };
+
+class _CompactBar extends StatelessWidget {
+  const _CompactBar({required this.controller});
+
+  final DeviceLabController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = controller.logicalSize;
+    final theme = Theme.of(context);
+
+    return Material(
+      color: theme.colorScheme.surface,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Divider(height: 1),
+          SafeArea(
+            top: false,
+            child: SizedBox(
+              height: 56,
+              child: Row(
+                children: [
+                  const SizedBox(width: 14),
+                  Icon(
+                    _categoryIcon(
+                      controller.isFreeform
+                          ? DeviceCategory.desktop
+                          : controller.device.category,
+                    ),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          controller.isFreeform
+                              ? 'Custom viewport'
+                              : controller.device.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          '${size.width.toStringAsFixed(0)} × '
+                          '${size.height.toStringAsFixed(0)} dp  ·  '
+                          '@${controller.screen.pixelRatio}x',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Rotate',
+                    iconSize: 20,
+                    onPressed: controller.canRotate
+                        ? controller.toggleOrientation
+                        : null,
+                    icon: const Icon(Icons.screen_rotation),
+                  ),
+                  IconButton(
+                    tooltip: 'Show original screen',
+                    iconSize: 20,
+                    onPressed: () => controller.setPreviewing(false),
+                    icon: const Icon(Icons.fullscreen),
+                  ),
+                  IconButton(
+                    tooltip: 'Show options',
+                    iconSize: 22,
+                    onPressed: () => controller.setToolsVisible(true),
+                    icon: const Icon(Icons.keyboard_arrow_up),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Chrome extends StatelessWidget {
   const _Chrome({required this.controller, required this.showRestoreButton});
 
@@ -352,33 +460,7 @@ class _Chrome extends StatelessWidget {
       if (!showRestoreButton) return const SizedBox.shrink();
       return _RestoreLayer(controller: controller);
     }
-    if (controller.toolsVisible) return const SizedBox.shrink();
-    return SafeArea(
-      child: Align(
-        alignment: Alignment.topRight,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FloatingActionButton.small(
-                heroTag: 'device-lab-tools',
-                tooltip: 'Show tools',
-                onPressed: () => controller.setToolsVisible(true),
-                child: const Icon(Icons.tune),
-              ),
-              const SizedBox(height: 8),
-              FloatingActionButton.small(
-                heroTag: 'device-lab-exit',
-                tooltip: 'Show original screen',
-                onPressed: () => controller.setPreviewing(false),
-                child: const Icon(Icons.fullscreen),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 }
 

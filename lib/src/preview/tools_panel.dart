@@ -45,8 +45,8 @@ class _ToolsPanelState extends State<ToolsPanel> {
                 ),
               ),
               IconButton(
-                tooltip: 'Hide tools panel',
-                icon: const Icon(Icons.view_sidebar_outlined, size: 18),
+                tooltip: 'Hide options',
+                icon: const Icon(Icons.keyboard_arrow_down, size: 22),
                 onPressed: () => c.setToolsVisible(false),
               ),
             ],
