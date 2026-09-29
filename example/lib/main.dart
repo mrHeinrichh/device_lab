@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 void main() {
   runApp(
     DeviceLab(
-      enabled: isDeviceLabAvailable,
       initialDeviceId: 'apple.iphone-duo',
       restoreButtonAlignment: Alignment.bottomLeft,
       availableLocales: const [Locale('en'), Locale('ja'), Locale('ar')],

@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../catalog/device_catalog.dart';
 import '../model/device_spec.dart';
+import 'device_lab_storage.dart';
 
 /// Holds every piece of preview state and notifies when any of it changes.
 ///
@@ -10,17 +12,46 @@ import '../model/device_spec.dart';
 class DeviceLabController extends ChangeNotifier {
   DeviceLabController({
     String? initialDeviceId,
-    this.enabled = true,
+    this.enabled = !kReleaseMode,
     Locale? locale,
     Alignment restoreAlignment = Alignment.bottomRight,
+    this.storage,
   })  : _restoreAlignment = restoreAlignment,
-        _device = DeviceCatalog.byId(
-              initialDeviceId ?? 'apple.iphone-17-pro',
-            ) ??
-            DeviceCatalog.all.first,
+        _device = _resolveDevice(initialDeviceId, storage),
         _locale = locale {
+    final storedPosture = storage?.read(storageKeyPosture);
+    if (storedPosture != null && _device.isFoldable) {
+      _posture = FoldPosture.values.asNameMap()[storedPosture] ?? _posture;
+    }
     _orientation = _device.screenFor(_posture).naturalOrientation;
+    final storedOrientation = storage?.read(storageKeyOrientation);
+    if (storedOrientation != null) {
+      _orientation =
+          Orientation.values.asNameMap()[storedOrientation] ?? _orientation;
+    }
   }
+
+  /// The device selected when nothing else is remembered or requested.
+  static const defaultDeviceId = 'apple.iphone-17-pro';
+
+  /// Storage key holding the selected [DeviceSpec.id].
+  static const storageKeyDevice = 'device_lab.device';
+
+  /// Storage key holding the selected [Orientation].
+  static const storageKeyOrientation = 'device_lab.orientation';
+
+  /// Storage key holding the selected [FoldPosture].
+  static const storageKeyPosture = 'device_lab.posture';
+
+  static DeviceSpec _resolveDevice(String? requested, DeviceLabStorage? s) {
+    final id = s?.read(storageKeyDevice) ?? requested ?? defaultDeviceId;
+    return DeviceCatalog.byId(id) ??
+        DeviceCatalog.byId(defaultDeviceId) ??
+        DeviceCatalog.all.first;
+  }
+
+  /// Where the selection is remembered, or null to forget it on rebuild.
+  final DeviceLabStorage? storage;
 
   /// Whether device_lab is available at all.
   ///
@@ -141,6 +172,7 @@ class DeviceLabController extends ChangeNotifier {
     _freeformSize = null;
     _posture = FoldPosture.flat;
     _orientation = value.screenFor(_posture).naturalOrientation;
+    _persist();
     notifyListeners();
   }
 
@@ -154,6 +186,7 @@ class DeviceLabController extends ChangeNotifier {
   void setOrientation(Orientation value) {
     if (_orientation == value) return;
     _orientation = value;
+    _persist();
     notifyListeners();
   }
 
@@ -173,6 +206,7 @@ class DeviceLabController extends ChangeNotifier {
     if (next.naturalOrientation != previous.naturalOrientation) {
       _orientation = next.naturalOrientation;
     }
+    _persist();
     notifyListeners();
   }
 
@@ -246,6 +280,14 @@ class DeviceLabController extends ChangeNotifier {
   /// Docks the restore button to the given corner.
   void setRestoreAlignment(Alignment value) =>
       _set(() => _restoreAlignment = value);
+
+  void _persist() {
+    final store = storage;
+    if (store == null) return;
+    store.write(storageKeyDevice, _device.id);
+    store.write(storageKeyOrientation, _orientation.name);
+    store.write(storageKeyPosture, _posture.name);
+  }
 
   void _set(VoidCallback mutate) {
     mutate();

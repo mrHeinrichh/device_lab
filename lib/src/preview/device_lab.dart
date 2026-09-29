@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'device_lab_controller.dart';
+import 'device_lab_storage.dart';
 import 'device_stage.dart';
 import 'tools_panel.dart';
 
@@ -33,13 +34,14 @@ class DeviceLab extends StatefulWidget {
   const DeviceLab({
     super.key,
     required this.builder,
-    this.enabled = true,
+    this.enabled = !kReleaseMode,
     this.controller,
     this.initialDeviceId,
     this.availableLocales = const [Locale('en')],
     this.backgroundColor,
     this.showRestoreButton = true,
     this.restoreButtonAlignment,
+    this.storage = const SessionDeviceLabStorage(),
   });
 
   /// Builds the app being previewed.
@@ -47,14 +49,18 @@ class DeviceLab extends StatefulWidget {
 
   /// Whether the preview is available at all.
   ///
-  /// Pass [isDeviceLabAvailable] to strip it from release builds. When false
-  /// the app is returned untouched and [appBuilder] is a pass-through.
+  /// Defaults to every build except release, so the preview never ships to
+  /// production. When false the app is returned untouched and [appBuilder] is
+  /// a pass-through.
   final bool enabled;
 
   /// An externally owned controller. One is created when this is null.
   final DeviceLabController? controller;
 
-  /// The [DeviceSpec.id] to select on first build.
+  /// The [DeviceSpec.id] to start on when [storage] remembers nothing.
+  ///
+  /// This is a seed, not an override: once a device has been picked, the
+  /// remembered one wins.
   final String? initialDeviceId;
 
   /// Locales offered in the tools panel.
@@ -72,6 +78,14 @@ class DeviceLab extends StatefulWidget {
   /// Takes precedence over the value already on [controller]. Dragging the
   /// button re-docks it to the nearest corner.
   final Alignment? restoreButtonAlignment;
+
+  /// Where the selected device, orientation and posture are remembered.
+  ///
+  /// Defaults to [SessionDeviceLabStorage], which keeps the selection for the
+  /// lifetime of the process, so rebuilding or hiding the preview no longer
+  /// snaps back to [initialDeviceId]. Pass your own implementation to persist
+  /// across restarts, or null to disable.
+  final DeviceLabStorage? storage;
 
   /// The nearest controller, or null when there is no [DeviceLab] above.
   static DeviceLabController? maybeOf(BuildContext context) =>
@@ -137,6 +151,7 @@ class _DeviceLabState extends State<DeviceLab> {
         DeviceLabController(
           initialDeviceId: widget.initialDeviceId,
           enabled: widget.enabled,
+          storage: widget.storage,
         );
     final alignment = widget.restoreButtonAlignment;
     if (alignment != null) _controller.setRestoreAlignment(alignment);

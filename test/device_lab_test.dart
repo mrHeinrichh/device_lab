@@ -1,5 +1,6 @@
 import 'package:device_lab/device_lab.dart';
 import 'package:device_lab/device_lab_testing.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -473,6 +474,94 @@ void main() {
       expect(c.active, isFalse);
       c.setEnabled(true);
       expect(c.active, isTrue);
+    });
+  });
+
+  group('persistence', () {
+    setUp(SessionDeviceLabStorage.clear);
+    tearDown(SessionDeviceLabStorage.clear);
+
+    test('a remembered device beats initialDeviceId', () {
+      const store = SessionDeviceLabStorage();
+      final first = DeviceLabController(
+        initialDeviceId: 'apple.iphone-17-pro',
+        storage: store,
+      );
+      expect(first.device.id, 'apple.iphone-17-pro');
+
+      first.selectDeviceId('samsung.galaxy-z-fold-7');
+      first.setPosture(FoldPosture.folded);
+
+      final rebuilt = DeviceLabController(
+        initialDeviceId: 'apple.iphone-17-pro',
+        storage: store,
+      );
+      expect(rebuilt.device.id, 'samsung.galaxy-z-fold-7');
+      expect(rebuilt.posture, FoldPosture.folded);
+    });
+
+    test('orientation is remembered too', () {
+      const store = SessionDeviceLabStorage();
+      DeviceLabController(
+              initialDeviceId: 'apple.iphone-17-pro', storage: store)
+          .setOrientation(Orientation.landscape);
+
+      final rebuilt = DeviceLabController(storage: store);
+      expect(rebuilt.orientation, Orientation.landscape);
+    });
+
+    test('without storage the seed device is used every time', () {
+      final a = DeviceLabController(initialDeviceId: 'google.pixel-10')
+        ..selectDeviceId('samsung.galaxy-z-fold-7');
+      expect(a.device.id, 'samsung.galaxy-z-fold-7');
+
+      final b = DeviceLabController(initialDeviceId: 'google.pixel-10');
+      expect(b.device.id, 'google.pixel-10');
+    });
+
+    test('an unknown remembered id falls back to the default', () {
+      const store = SessionDeviceLabStorage();
+      store.write(DeviceLabController.storageKeyDevice, 'acme.nope');
+      expect(
+        DeviceLabController(storage: store).device.id,
+        DeviceLabController.defaultDeviceId,
+      );
+    });
+
+    testWidgets('recreating the widget keeps the selected device', (t) async {
+      Widget harness(Key key) => DeviceLab(
+            key: key,
+            initialDeviceId: 'apple.iphone-17-pro',
+            builder: (_) => MaterialApp(
+              builder: DeviceLab.appBuilder,
+              home: const SizedBox(),
+            ),
+          );
+
+      await t.pumpWidget(harness(const ValueKey('a')));
+      await t.pumpAndSettle();
+      DeviceLab.of(t.element(find.byType(MaterialApp).last))
+          .selectDeviceId('google.pixel-10-pro-fold');
+      await t.pumpAndSettle();
+
+      await t.pumpWidget(harness(const ValueKey('b')));
+      await t.pumpAndSettle();
+      expect(
+        DeviceLab.of(t.element(find.byType(MaterialApp).last)).device.id,
+        'google.pixel-10-pro-fold',
+      );
+    });
+  });
+
+  group('release gate', () {
+    test('enabled defaults to off in release builds', () {
+      expect(DeviceLabController().enabled, !kReleaseMode);
+      expect(isDeviceLabAvailable, !kReleaseMode);
+    });
+
+    test('an explicit false still wins', () {
+      expect(DeviceLabController(enabled: false).enabled, isFalse);
+      expect(DeviceLabController(enabled: false).active, isFalse);
     });
   });
 

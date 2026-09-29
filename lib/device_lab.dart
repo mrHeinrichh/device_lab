@@ -19,3 +19,5 @@ export 'src/model/fold_query.dart' show FoldQuery, FoldQueryContext;
 export 'src/preview/device_lab.dart'
     show DeviceLab, DeviceLabScope, isDeviceLabAvailable;
 export 'src/preview/device_lab_controller.dart' show DeviceLabController;
+export 'src/preview/device_lab_storage.dart'
+    show DeviceLabStorage, SessionDeviceLabStorage;

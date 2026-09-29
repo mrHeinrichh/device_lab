@@ -1,3 +1,16 @@
+## 0.2.0
+
+- `enabled` now defaults to `!kReleaseMode` instead of `true`, so the preview
+  cannot ship to production by accident and there is nothing to remember to
+  turn off.
+- The selected device, orientation and fold posture are now remembered.
+  `initialDeviceId` became a seed rather than an override, so hiding the
+  preview or rebuilding the widget no longer snaps back to it.
+- Added `DeviceLabStorage`, with `SessionDeviceLabStorage` as the default.
+  Implement it over `SharedPreferences` or similar to persist across
+  restarts, or pass `storage: null` to opt out.
+- Exposed `DeviceLabController.defaultDeviceId` and the storage keys.
+
 ## 0.1.1
 
 - Document the public API so the reference on pub.dev is usable.

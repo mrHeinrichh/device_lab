@@ -20,8 +20,6 @@ any size at all via free-form mode.
 void main() {
   runApp(
     DeviceLab(
-      enabled: isDeviceLabAvailable,
-      initialDeviceId: 'apple.iphone-17-pro',
       builder: (_) => const MyApp(),
     ),
   );
@@ -183,8 +181,44 @@ and navigation stack all survive.
 checks, so when hidden your app sees the real window `MediaQuery` and its real
 `TargetPlatform`.
 
+## Remembering your selection
+
+The device you pick sticks. `initialDeviceId` is only a **seed** — the device
+to start on when nothing has been remembered yet. Once you pick something
+else, that wins, and hiding the preview or rebuilding the widget no longer
+snaps back.
+
+By default this lasts for the lifetime of the process
+(`SessionDeviceLabStorage`). To keep it across restarts, implement
+`DeviceLabStorage` over whatever you already use:
+
+```dart
+class PrefsStorage extends DeviceLabStorage {
+  const PrefsStorage(this.prefs);
+  final SharedPreferences prefs;
+
+  @override
+  String? read(String key) => prefs.getString(key);
+
+  @override
+  void write(String key, String value) => prefs.setString(key, value);
+}
+
+DeviceLab(
+  storage: PrefsStorage(prefs),
+  builder: (_) => const MyApp(),
+)
+```
+
+Reads and writes are synchronous, so load your store before `runApp`. Pass
+`storage: null` to forget the selection on every rebuild.
+
 ## Disabling in release
 
-`enabled: isDeviceLabAvailable` is `!kReleaseMode`. When disabled, `DeviceLab`
-returns your app untouched and `appBuilder` is a pass-through, so there is no
-release-mode overhead.
+`enabled` defaults to `!kReleaseMode`, so the preview never ships to
+production and you do not have to remember to turn it off. When disabled,
+`DeviceLab` returns your app untouched and `appBuilder` is a pass-through, so
+there is no release-mode overhead.
+
+Pass `enabled: false` to turn it off in debug too, or your own flag to gate it
+behind a developer menu.
