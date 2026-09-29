@@ -8,7 +8,7 @@ text scale and accessibility flags.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/mrHeinrichh/device_lab/master/screenshots/preview-foldable.png" width="49%" alt="iPhone Duo unfolded, with a two-pane layout driven by the fold display feature">
-  <img src="https://raw.githubusercontent.com/mrHeinrichh/device_lab/master/screenshots/flip-cover.png" width="49%" alt="Galaxy Z Flip 7 cover screen at 367 by 349 logical pixels">
+  <img src="https://raw.githubusercontent.com/mrHeinrichh/device_lab/master/screenshots/duo-closed-rotated.png" width="49%" alt="The closed iPhone Duo turned to landscape, with its camera, buttons and spine turned with it">
 </p>
 
 149 built-in devices across 16 vendors — iPhone (including **iPhone Duo**, the
@@ -56,6 +56,13 @@ Book-folds (Galaxy Z Fold, Pixel Pro Fold, iPhone Duo, OnePlus Open) fold on a
 vertical hinge; flip phones (Z Flip, Motorola Razr) fold on a horizontal one.
 Both are modelled the same way — two screens plus a `HingeSpec` — and the hinge
 axis rotates with the device when you flip orientation.
+
+The iPhone Duo is drawn from Apple's published body and display dimensions:
+titanium rim, a square spine side against a round outer side, a round camera on
+the cover, the buttons where Apple shows them, and no cutout on the open
+display, which hides its camera under the panel. Its pixel resolutions and
+densities come from Apple's spec sheet. Point sizes are not published, so they
+are derived at 3x, which happens to give identical bezels on both axes.
 
 The iPhone Duo's inner display is **landscape-natural** (its open body is
 164.6mm wide by 117.8mm tall), so selecting it opens it in landscape with the
@@ -131,6 +138,20 @@ and are approximations, as are all safe-area insets — good enough for layout
 work, and correctable without touching package code. If a value is wrong for
 hardware you own, open an issue with the output of `MediaQuery.of(context)`
 from that device and it becomes a one-line data fix.
+
+## Rotating and zooming
+
+Rotate turns the whole device, not just the screen. The camera cutout, side
+buttons, spine and corner rounding all move with the body, and the app is
+re-laid out at the turned size with its landscape insets. Cutouts are reported
+through `MediaQuery.displayFeatures` in every orientation, at wherever the turn
+carries them.
+
+The bar and the panel share a zoom control: step down or up through presets,
+drag the slider, or press fit to size the device to the space available. The
+percentage is the scale the stage is actually drawing at, and a zoom larger
+than the space allows is drawn at the largest that fits. The choice is
+remembered with the rest of the selection.
 
 ## Hiding the lab
 

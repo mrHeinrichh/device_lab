@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
@@ -29,6 +31,8 @@ class DeviceLabController extends ChangeNotifier {
       _orientation =
           Orientation.values.asNameMap()[storedOrientation] ?? _orientation;
     }
+    final storedZoom = storage?.read(storageKeyZoom);
+    _zoom = storedZoom == null ? null : double.tryParse(storedZoom);
   }
 
   /// The device selected when nothing else is remembered or requested.
@@ -42,6 +46,25 @@ class DeviceLabController extends ChangeNotifier {
 
   /// Storage key holding the selected [FoldPosture].
   static const storageKeyPosture = 'device_lab.posture';
+
+  /// Storage key holding the manual zoom, or `fit` for automatic sizing.
+  static const storageKeyZoom = 'device_lab.zoom';
+
+  /// The zoom levels the zoom buttons step through.
+  static const zoomSteps = <double>[
+    0.25,
+    0.33,
+    0.5,
+    0.67,
+    0.75,
+    0.9,
+    1,
+    1.25,
+    1.5,
+    2,
+    2.5,
+    3,
+  ];
 
   static DeviceSpec _resolveDevice(String? requested, DeviceLabStorage? s) {
     final id = s?.read(storageKeyDevice) ?? requested ?? defaultDeviceId;
@@ -77,6 +100,10 @@ class DeviceLabController extends ChangeNotifier {
   bool _toolsVisible = true;
   bool _previewing = true;
   Alignment _restoreAlignment;
+  double? _zoom;
+  final ValueNotifier<({double scale, double fitLimit})> _stage =
+      ValueNotifier((scale: 1.0, fitLimit: 1.0));
+  bool _disposed = false;
 
   /// The selected device.
   DeviceSpec get device => _device;
@@ -281,12 +308,94 @@ class DeviceLabController extends ChangeNotifier {
   void setRestoreAlignment(Alignment value) =>
       _set(() => _restoreAlignment = value);
 
+  /// The body drawn around the simulated screen.
+  ///
+  /// A foldable's cover screen and its open screen each carry their own, and
+  /// free-form mode has none.
+  DeviceFrame get frame =>
+      isFreeform ? DeviceFrame.none : _device.frameFor(screen);
+
+  /// The manual zoom, or null while the preview sizes itself to fit.
+  double? get zoom => _zoom;
+
+  /// Whether the preview is sizing itself to fit the space available.
+  bool get isFit => _zoom == null;
+
+  /// The scale the stage is actually drawing at, and the largest scale that
+  /// still fits the space available.
+  ///
+  /// Reported by the stage after each layout, so it reflects what is on screen
+  /// rather than what was asked for.
+  ValueListenable<({double scale, double fitLimit})> get stageMetrics => _stage;
+
+  /// Whether [zoomIn] would enlarge the preview.
+  bool get canZoomIn {
+    final m = _stage.value;
+    return m.scale < math.min(m.fitLimit, zoomSteps.last) - 0.01;
+  }
+
+  /// Whether [zoomOut] would shrink the preview.
+  bool get canZoomOut => _stage.value.scale > zoomSteps.first + 0.01;
+
+  /// Sets the zoom, or returns to automatic fitting with null.
+  ///
+  /// A value larger than the space allows is drawn at the largest scale that
+  /// fits.
+  void setZoom(double? value) {
+    _zoom = value?.clamp(0.1, 4.0).toDouble();
+    _persist();
+    notifyListeners();
+  }
+
+  /// Steps up to the next zoom level that fits the space available.
+  void zoomIn() {
+    if (!canZoomIn) return;
+    final m = _stage.value;
+    final next = zoomSteps.firstWhere(
+      (step) => step > m.scale + 0.01,
+      orElse: () => zoomSteps.last,
+    );
+    setZoom(math.min(next, m.fitLimit));
+  }
+
+  /// Steps down to the previous zoom level.
+  void zoomOut() {
+    if (!canZoomOut) return;
+    final m = _stage.value;
+    final next = zoomSteps.lastWhere(
+      (step) => step < m.scale - 0.01,
+      orElse: () => zoomSteps.first,
+    );
+    setZoom(next);
+  }
+
+  /// Called by the stage after layout with the scale it drew at.
+  void reportStage({required double scale, required double fitLimit}) {
+    final m = _stage.value;
+    if ((scale - m.scale).abs() < 0.001 &&
+        (fitLimit - m.fitLimit).abs() < 0.001) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_disposed) return;
+      _stage.value = (scale: scale, fitLimit: fitLimit);
+    });
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _stage.dispose();
+    super.dispose();
+  }
+
   void _persist() {
     final store = storage;
     if (store == null) return;
     store.write(storageKeyDevice, _device.id);
     store.write(storageKeyOrientation, _orientation.name);
     store.write(storageKeyPosture, _posture.name);
+    store.write(storageKeyZoom, _zoom?.toString() ?? 'fit');
   }
 
   void _set(VoidCallback mutate) {

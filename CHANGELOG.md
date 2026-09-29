@@ -1,3 +1,28 @@
+## 0.3.1
+
+- Rotating now turns the whole device. The camera cutout, side buttons, hinge
+  spine and corner rounding move with the body, and cutouts are reported
+  through `MediaQuery.displayFeatures` in every orientation instead of
+  vanishing once the device was turned.
+- Side buttons are now drawn. They were declared on the frame but never
+  painted. Frames also gain a metal rim.
+- The iPhone Duo is redrawn from Apple's published dimensions: titanium rim,
+  spine, a square spine side against a round outer side, a round camera on the
+  cover, and buttons where Apple shows them. The open display no longer draws a
+  camera cutout. Pixel densities (430 and 460 ppi) are now shown.
+- The bezel rotation no longer keys off landscape, which was wrong for
+  landscape-natural devices such as the Duo.
+- Zoom control in the compact bar and the panel: step down or up, drag a
+  slider, or fit to the space available. It reports the scale the stage is
+  drawing at and is remembered with the rest of the selection.
+- Added `DeviceScreen.corners`, `frame` and `ppi`, `DeviceFrame.corners`,
+  `rimWidth` and `spine`, `FrameSpine`, `DeviceSpec.frameFor`, and
+  `DeviceLabController.frame`, `zoom`, `setZoom`, `zoomIn`, `zoomOut` and
+  `stageMetrics`. All are additive.
+- The JSON codec now round-trips frames, buttons, spine, corners, ppi and
+  cutout alignment. Cutout alignment and the obstructing flag were previously
+  lost.
+
 ## 0.3.0
 
 - The tools panel is back below the stage in narrow layouts. It stays a left

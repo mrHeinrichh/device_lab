@@ -1,10 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../model/device_spec.dart';
+import '../model/quarter_turn.dart';
+import 'device_body.dart';
 import 'device_lab_controller.dart';
 
 const _minScale = 0.2;
 const _maxScale = 1.6;
+const _floorScale = 0.05;
 
 class DeviceStage extends StatelessWidget {
   const DeviceStage({
@@ -20,14 +25,13 @@ class DeviceStage extends StatelessWidget {
   Widget build(BuildContext context) {
     final previewing = controller.previewing;
     final screen = controller.screen;
+    final orientation = controller.orientation;
+    final turns =
+        previewing && orientation != screen.naturalOrientation ? 1 : 0;
     final frame = previewing && controller.showFrame
-        ? controller.device.frame
+        ? controller.frame
         : DeviceFrame.none;
-    final bezel = previewing
-        ? (controller.orientation == Orientation.landscape
-            ? _rotateInsets(frame.bezel)
-            : frame.bezel)
-        : EdgeInsets.zero;
+    final bezel = turns == 1 ? rotateInsetsCcw(frame.bezel) : frame.bezel;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -38,11 +42,22 @@ class DeviceStage extends StatelessWidget {
           size.width + bezel.horizontal,
           size.height + bezel.vertical,
         );
-        final fitWidth = (constraints.maxWidth - 40) / outer.width;
-        final fitHeight = (constraints.maxHeight - 40) / outer.height;
-        final fit = fitWidth < fitHeight ? fitWidth : fitHeight;
-        final scale =
-            previewing ? fit.clamp(_minScale, _maxScale).toDouble() : 1.0;
+        final fitLimit = math.max(
+          math.min(
+            (constraints.maxWidth - 40) / outer.width,
+            (constraints.maxHeight - 40) / outer.height,
+          ),
+          _floorScale,
+        );
+        final manual = controller.zoom;
+        final scale = !previewing
+            ? 1.0
+            : manual == null
+                ? fitLimit.clamp(_minScale, _maxScale).toDouble()
+                : manual.clamp(_floorScale, fitLimit).toDouble();
+        if (previewing) {
+          controller.reportStage(scale: scale, fitLimit: fitLimit);
+        }
 
         return Center(
           child: Transform.scale(
@@ -53,8 +68,10 @@ class DeviceStage extends StatelessWidget {
               child: _Frame(
                 frame: frame,
                 bezel: bezel,
+                turns: turns,
                 controller: controller,
                 screen: screen,
+                orientation: orientation,
                 size: size,
                 previewing: previewing,
                 child: child,
@@ -65,17 +82,16 @@ class DeviceStage extends StatelessWidget {
       },
     );
   }
-
-  EdgeInsets _rotateInsets(EdgeInsets i) =>
-      EdgeInsets.fromLTRB(i.top, i.right, i.bottom, i.left);
 }
 
 class _Frame extends StatelessWidget {
   const _Frame({
     required this.frame,
     required this.bezel,
+    required this.turns,
     required this.controller,
     required this.screen,
+    required this.orientation,
     required this.size,
     required this.previewing,
     required this.child,
@@ -83,8 +99,10 @@ class _Frame extends StatelessWidget {
 
   final DeviceFrame frame;
   final EdgeInsets bezel;
+  final int turns;
   final DeviceLabController controller;
   final DeviceScreen screen;
+  final Orientation orientation;
   final Size size;
   final bool previewing;
   final Widget child;
@@ -92,29 +110,17 @@ class _Frame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final decorated = previewing && controller.showFrame;
-    final radius = decorated ? screen.cornerRadius : 0.0;
+    final cutoutRects =
+        decorated ? screen.cutoutRectsFor(orientation) : const <Rect>[];
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: frame.bodyColor,
-        borderRadius: BorderRadius.circular(frame.outerRadius),
-        border: frame.outerRadius > 0
-            ? Border.all(color: frame.edgeColor, width: 1.5)
-            : null,
-        boxShadow: frame.outerRadius > 0
-            ? const [
-                BoxShadow(
-                  color: Color(0x4D000000),
-                  blurRadius: 32,
-                  offset: Offset(0, 12),
-                ),
-              ]
-            : null,
-      ),
+    return CustomPaint(
+      painter: DeviceBodyPainter(frame: frame, turns: turns),
       child: Padding(
         padding: bezel,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(radius),
+          borderRadius: decorated
+              ? screen.borderRadiusFor(orientation)
+              : BorderRadius.zero,
           child: SizedBox(
             width: size.width,
             height: size.height,
@@ -126,18 +132,19 @@ class _Frame extends StatelessWidget {
                   _SafeAreaOverlay(
                     padding: controller.isFreeform
                         ? EdgeInsets.zero
-                        : screen.paddingFor(controller.orientation),
+                        : screen.paddingFor(orientation),
                   ),
-                if (decorated &&
-                    controller.orientation == screen.naturalOrientation)
-                  ...screen.cutouts.map(
-                    (c) => _CutoutOverlay(cutout: c, screen: size),
-                  ),
+                if (decorated)
+                  for (var i = 0; i < cutoutRects.length; i++)
+                    _CutoutOverlay(
+                      shape: screen.cutouts[i].shape,
+                      rect: cutoutRects[i],
+                    ),
                 if (decorated && screen.hinge != null)
                   _HingeOverlay(
                     hinge: screen.hinge!,
                     posture: controller.posture,
-                    axis: screen.hingeAxisFor(controller.orientation),
+                    axis: screen.hingeAxisFor(orientation),
                   ),
               ],
             ),
@@ -194,35 +201,29 @@ class _SafeAreaPainter extends CustomPainter {
 }
 
 class _CutoutOverlay extends StatelessWidget {
-  const _CutoutOverlay({required this.cutout, required this.screen});
+  const _CutoutOverlay({required this.shape, required this.rect});
 
-  final ScreenCutout cutout;
-  final Size screen;
+  final CutoutShape shape;
+  final Rect rect;
 
   @override
-  Widget build(BuildContext context) {
-    final rect = cutout.resolve(screen);
-    return Positioned.fromRect(
-      rect: rect,
-      child: IgnorePointer(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: const Color(0xFF000000),
-            borderRadius: BorderRadius.circular(
-              switch (cutout.shape) {
-                CutoutShape.notch => 16,
-                CutoutShape.dynamicIsland ||
-                CutoutShape.pill =>
-                  rect.height / 2,
-                CutoutShape.punchHole => rect.height / 2,
-                CutoutShape.none => 0,
-              },
+  Widget build(BuildContext context) => Positioned.fromRect(
+        rect: rect,
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFF000000),
+              borderRadius: BorderRadius.circular(
+                switch (shape) {
+                  CutoutShape.notch => 16,
+                  CutoutShape.none => 0,
+                  _ => rect.shortestSide / 2,
+                },
+              ),
             ),
           ),
         ),
-      ),
-    );
-  }
+      );
 }
 
 class _HingeOverlay extends StatelessWidget {
@@ -254,24 +255,31 @@ class _HingePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = posture == FoldPosture.halfOpened
-          ? const Color(0x80FFFFFF)
-          : const Color(0x33FFFFFF)
-      ..strokeWidth = hinge.thickness > 0 ? hinge.thickness : 2;
-    if (axis == Axis.vertical) {
-      canvas.drawLine(
-        Offset(size.width / 2, 0),
-        Offset(size.width / 2, size.height),
-        paint,
-      );
-    } else {
-      canvas.drawLine(
-        Offset(0, size.height / 2),
-        Offset(size.width, size.height / 2),
-        paint,
-      );
-    }
+    final vertical = axis == Axis.vertical;
+    final width = hinge.thickness > 0 ? hinge.thickness : 16.0;
+    final strength = posture == FoldPosture.halfOpened ? 1.8 : 1.0;
+    final center = size.center(Offset.zero);
+    final rect = vertical
+        ? Rect.fromCenter(center: center, width: width, height: size.height)
+        : Rect.fromCenter(center: center, width: size.width, height: width);
+    final valley = Color.fromRGBO(0, 0, 0, (0.16 * strength).clamp(0.0, 1.0));
+    final ridge =
+        Color.fromRGBO(255, 255, 255, (0.10 * strength).clamp(0.0, 1.0));
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: vertical ? Alignment.centerLeft : Alignment.topCenter,
+          end: vertical ? Alignment.centerRight : Alignment.bottomCenter,
+          colors: [
+            const Color(0x00000000),
+            valley,
+            ridge,
+            const Color(0x00000000),
+          ],
+          stops: const [0, 0.46, 0.54, 1],
+        ).createShader(rect),
+    );
   }
 
   @override

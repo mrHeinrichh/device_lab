@@ -3,18 +3,18 @@ description: >-
   Preview your Flutter app on any device without a simulator: 149 devices,
   foldables with real display features, free-form resolutions, and
   golden-test integration.
-version: 0.3.0
+version: 0.3.1
 repository: https://github.com/mrHeinrichh/device_lab
 issue_tracker: https://github.com/mrHeinrichh/device_lab/issues
 screenshots:
   - description: >-
-      The tools panel beside an iPhone Duo, unfolded in its natural landscape
-      pose. The demo app picks a two-pane layout from the fold display feature.
+      The iPhone Duo unfolded, drawn from Apple's published dimensions, with
+      the fold reported to the app so a two-pane layout switches on by itself.
     path: screenshots/preview-foldable.png
   - description: >-
-      A Galaxy Z Flip 7 on its cover screen, 367 by 349 logical pixels, with
-      the platform switched to Android.
-    path: screenshots/flip-cover.png
+      The closed Duo turned to landscape: camera, buttons and spine turn with
+      the body, and the bar shows the resolution with zoom controls.
+    path: screenshots/duo-closed-rotated.png
   - description: >-
       The preview hidden, showing the app at the real window size with a
       draggable restore button docked to a corner.

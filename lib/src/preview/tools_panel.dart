@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../catalog/device_catalog.dart';
 import '../model/device_spec.dart';
 import 'device_lab_controller.dart';
+import 'zoom_controls.dart';
 
 class ToolsPanel extends StatefulWidget {
   const ToolsPanel({
@@ -71,6 +72,10 @@ class _ToolsPanelState extends State<ToolsPanel> {
               label: const Text('Show original screen'),
               onPressed: () => c.setPreviewing(false),
             ),
+          ),
+          _Section(
+            title: 'Zoom',
+            child: ZoomControls(controller: c),
           ),
           _Section(
             title: 'Layout',
@@ -256,7 +261,8 @@ class _ViewportSummary extends StatelessWidget {
             style: const TextStyle(fontSize: 12),
           ),
           Text(
-            '${px.width.toStringAsFixed(0)} × ${px.height.toStringAsFixed(0)} px',
+            '${px.width.toStringAsFixed(0)} × ${px.height.toStringAsFixed(0)} px'
+            '${screen.ppi == null ? '' : '  ·  ${screen.ppi!.round()} ppi'}',
             style: const TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
           ),
         ],

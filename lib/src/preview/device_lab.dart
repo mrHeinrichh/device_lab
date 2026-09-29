@@ -7,6 +7,7 @@ import 'device_lab_controller.dart';
 import 'device_lab_storage.dart';
 import 'device_stage.dart';
 import 'tools_panel.dart';
+import 'zoom_controls.dart';
 
 /// Wraps your app in a device preview.
 ///
@@ -362,7 +363,6 @@ class _CompactBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = controller.logicalSize;
     final theme = Theme.of(context);
 
     return Material(
@@ -373,50 +373,11 @@ class _CompactBar extends StatelessWidget {
           const Divider(height: 1),
           SafeArea(
             top: false,
-            child: SizedBox(
-              height: 56,
-              child: Row(
-                children: [
-                  const SizedBox(width: 14),
-                  Icon(
-                    _categoryIcon(
-                      controller.isFreeform
-                          ? DeviceCategory.desktop
-                          : controller.device.category,
-                    ),
-                    size: 18,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          controller.isFreeform
-                              ? 'Custom viewport'
-                              : controller.device.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          '${size.width.toStringAsFixed(0)} × '
-                          '${size.height.toStringAsFixed(0)} dp  ·  '
-                          '@${controller.screen.pixelRatio}x',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 680;
+                final info = Expanded(child: _DeviceInfo(controller));
+                final actions = [
                   IconButton(
                     tooltip: 'Rotate',
                     iconSize: 20,
@@ -438,12 +399,107 @@ class _CompactBar extends StatelessWidget {
                     icon: const Icon(Icons.keyboard_arrow_up),
                   ),
                   const SizedBox(width: 4),
-                ],
-              ),
+                ];
+
+                if (wide) {
+                  return SizedBox(
+                    height: 56,
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 14),
+                        _DeviceIcon(controller),
+                        const SizedBox(width: 10),
+                        info,
+                        SizedBox(
+                          width: 300,
+                          child: ZoomControls(controller: controller),
+                        ),
+                        ...actions,
+                      ],
+                    ),
+                  );
+                }
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      height: 52,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 14),
+                          _DeviceIcon(controller),
+                          const SizedBox(width: 10),
+                          info,
+                          ...actions,
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      height: 40,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: ZoomControls(controller: controller),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DeviceIcon extends StatelessWidget {
+  const _DeviceIcon(this.controller);
+
+  final DeviceLabController controller;
+
+  @override
+  Widget build(BuildContext context) => Icon(
+        _categoryIcon(
+          controller.isFreeform
+              ? DeviceCategory.desktop
+              : controller.device.category,
+        ),
+        size: 18,
+      );
+}
+
+class _DeviceInfo extends StatelessWidget {
+  const _DeviceInfo(this.controller);
+
+  final DeviceLabController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = controller.logicalSize;
+    final screen = controller.screen;
+    final ppi = screen.ppi;
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          controller.isFreeform ? 'Custom viewport' : controller.device.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        Text(
+          '${size.width.toStringAsFixed(0)} × ${size.height.toStringAsFixed(0)} dp'
+          '  ·  @${screen.pixelRatio}x'
+          '${ppi == null ? '' : '  ·  ${ppi.round()} ppi'}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 11, color: muted),
+        ),
+      ],
     );
   }
 }

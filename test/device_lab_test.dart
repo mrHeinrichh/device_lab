@@ -1,5 +1,7 @@
 import 'package:device_lab/device_lab.dart';
 import 'package:device_lab/device_lab_testing.dart';
+import 'package:device_lab/src/model/quarter_turn.dart';
+import 'package:device_lab/src/preview/device_body.dart';
 import 'package:device_lab/src/preview/device_stage.dart';
 import 'package:device_lab/src/preview/tools_panel.dart';
 import 'package:flutter/foundation.dart';
@@ -733,6 +735,332 @@ void main() {
     });
   });
 
+  group('quarter turns', () {
+    test('a rect moves with the device when it is turned', () {
+      expect(
+        rotateRectCcw(Rect.fromLTWH(10, 20, 30, 40), const Size(100, 200)),
+        Rect.fromLTWH(20, 60, 40, 30),
+      );
+    });
+
+    test('insets and corner radii turn the same way', () {
+      expect(
+        rotateInsetsCcw(const EdgeInsets.fromLTRB(1, 2, 3, 4)),
+        const EdgeInsets.fromLTRB(2, 3, 4, 1),
+      );
+      final turned = rotateRadiiCcw(
+        const BorderRadius.only(
+          topLeft: Radius.circular(1),
+          topRight: Radius.circular(2),
+          bottomRight: Radius.circular(3),
+          bottomLeft: Radius.circular(4),
+        ),
+      );
+      expect(turned.topLeft.x, 2);
+      expect(turned.topRight.x, 3);
+      expect(turned.bottomRight.x, 4);
+      expect(turned.bottomLeft.x, 1);
+    });
+
+    test('a phone turned to landscape carries its island to the left', () {
+      final screen = DeviceCatalog.byId('apple.iphone-17-pro')!.primaryScreen;
+
+      final portrait = screen.cutoutRectsFor(Orientation.portrait).single;
+      expect(portrait, Rect.fromLTWH(138, 11, 126, 37));
+
+      final landscape = screen.cutoutRectsFor(Orientation.landscape).single;
+      expect(landscape, Rect.fromLTWH(11, 138, 37, 126));
+
+      final feature = screen
+          .displayFeaturesFor(Orientation.landscape, FoldPosture.flat)
+          .single;
+      expect(feature.type, DisplayFeatureType.cutout);
+      expect(feature.bounds, landscape);
+    });
+
+    test('screen corners turn with the device', () {
+      final cover = DeviceCatalog.byId('apple.iphone-duo')!.screens.last;
+      final natural = cover.borderRadiusFor(Orientation.portrait);
+      final turned = cover.borderRadiusFor(Orientation.landscape);
+      expect(natural.topRight.x, 58);
+      expect(turned.topLeft.x, 58);
+      expect(turned.topRight.x, 58);
+      expect(turned.bottomLeft.x, 8);
+    });
+
+    test('a button sits on the edge it was declared on', () {
+      const body = Size(100, 200);
+      expect(
+        const DeviceButton(AxisDirection.right, 0.25, 0.1).rect(body),
+        Rect.fromLTWH(99, 50, 4, 20),
+      );
+      expect(
+        const DeviceButton(AxisDirection.left, 0.25, 0.1).rect(body),
+        Rect.fromLTWH(-3, 50, 4, 20),
+      );
+      expect(
+        const DeviceButton(AxisDirection.up, 0.5, 0.1).rect(body),
+        Rect.fromLTWH(50, -3, 10, 4),
+      );
+      expect(
+        const DeviceButton(AxisDirection.down, 0.5, 0.1).rect(body),
+        Rect.fromLTWH(50, 199, 10, 4),
+      );
+    });
+
+    DeviceBodyPainter bodyPainter(WidgetTester t) => t
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((w) => w.painter)
+        .whereType<DeviceBodyPainter>()
+        .single;
+
+    Widget harness(DeviceLabController c) => DeviceLab(
+          controller: c,
+          builder: (_) => MaterialApp(
+            builder: DeviceLab.appBuilder,
+            home: const SizedBox(),
+          ),
+        );
+
+    testWidgets('the whole body turns, not just the screen', (t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      expect(bodyPainter(t).turns, 0);
+
+      c.setOrientation(Orientation.landscape);
+      await t.pumpAndSettle();
+      expect(bodyPainter(t).turns, 1);
+
+      c.setOrientation(Orientation.portrait);
+      await t.pumpAndSettle();
+      expect(bodyPainter(t).turns, 0);
+    });
+
+    testWidgets('a landscape-natural foldable starts unturned', (t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-duo');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      expect(c.orientation, Orientation.landscape);
+      expect(bodyPainter(t).turns, 0);
+
+      c.toggleOrientation();
+      await t.pumpAndSettle();
+      expect(bodyPainter(t).turns, 1);
+    });
+
+    testWidgets('hiding the preview draws no body', (t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro')
+        ..setOrientation(Orientation.landscape)
+        ..setPreviewing(false);
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      expect(bodyPainter(t).turns, 0);
+      expect(bodyPainter(t).frame.bodyColor.a, 0);
+    });
+  });
+
+  group('iPhone Duo style', () {
+    final duo = DeviceCatalog.byId('apple.iphone-duo')!;
+    final inner = duo.screens.first;
+    final cover = duo.screens.last;
+
+    test('the open display has no punched camera', () {
+      expect(inner.cutouts, isEmpty);
+      expect(inner.ppi, 430);
+      expect(cover.ppi, 460);
+    });
+
+    test('the cover camera sits in the top right corner', () {
+      final rect = cover.cutoutRectsFor(Orientation.portrait).single;
+      expect(rect.size, const Size(38, 38));
+      expect(cover.logicalSize.width - rect.right, closeTo(29, 0.01));
+      expect(rect.top, closeTo(28, 0.01));
+      expect(cover.cutouts.single.shape, CutoutShape.dynamicIsland);
+    });
+
+    test('the spine side is square and the outer side is round', () {
+      final corners = cover.corners!;
+      expect(corners.topLeft.x, lessThan(corners.topRight.x));
+      expect(corners.bottomLeft.x, lessThan(corners.bottomRight.x));
+      expect(cover.frame!.corners!.topLeft.x, lessThan(30));
+      expect(cover.frame!.corners!.topRight.x, greaterThan(60));
+    });
+
+    test('bezels follow the published body size', () {
+      final open = inner.frame!.bezel;
+      expect(open.left, closeTo(19.4, 0.5));
+      expect(open.horizontal, closeTo(open.vertical, 0.2));
+
+      final closed = cover.frame!.bezel;
+      expect(closed.left - closed.right, closeTo(7, 0.01));
+      expect(closed.top, closeTo(closed.bottom, 0.01));
+    });
+
+    test('each posture is drawn in its own body', () {
+      expect(duo.frameFor(inner), isNot(same(duo.frameFor(cover))));
+      expect(duo.frameFor(cover).spine?.side, AxisDirection.left);
+      expect(duo.frameFor(inner).spine, isNull);
+      expect(duo.frameFor(inner).buttons, hasLength(3));
+      expect(duo.frameFor(cover).buttons, hasLength(3));
+
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-duo');
+      expect(c.frame.spine, isNull);
+      c.setPosture(FoldPosture.folded);
+      expect(c.frame.spine, isNotNull);
+    });
+
+    test('only the closed body reports a camera to the app', () {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-duo');
+      final open = c.resolveMediaQuery(const MediaQueryData());
+      expect(open.displayFeatures.map((f) => f.type), [
+        DisplayFeatureType.fold,
+      ]);
+
+      c.setPosture(FoldPosture.folded);
+      final closed = c.resolveMediaQuery(const MediaQueryData());
+      expect(closed.displayFeatures.map((f) => f.type), [
+        DisplayFeatureType.cutout,
+      ]);
+    });
+
+    test('json keeps the whole look through a round trip', () {
+      final restored = DeviceSpecCodec.fromJson(DeviceSpecCodec.toJson(duo));
+      final restoredCover = restored.screens.last;
+      expect(restoredCover.cutouts.single.alignment, Alignment.topRight);
+      expect(restoredCover.corners!.topRight.x, 58);
+      expect(restoredCover.ppi, 460);
+      expect(restoredCover.frame!.spine!.side, AxisDirection.left);
+      expect(restoredCover.frame!.buttons, hasLength(3));
+      expect(restored.screens.first.frame!.buttons, hasLength(3));
+      expect(restored.screens.first.frame!.corners!.topLeft.x, 64);
+    });
+  });
+
+  group('zoom', () {
+    Widget harness(DeviceLabController c) => DeviceLab(
+          controller: c,
+          builder: (_) => MaterialApp(
+            builder: DeviceLab.appBuilder,
+            home: const SizedBox(),
+          ),
+        );
+
+    Future<DeviceLabController> pumpCollapsed(WidgetTester t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro')
+        ..setToolsVisible(false);
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      return c;
+    }
+
+    bool enabled(WidgetTester t, String tooltip) =>
+        t
+            .widget<IconButton>(
+                find.widgetWithIcon(IconButton, _iconFor(tooltip)))
+            .onPressed !=
+        null;
+
+    testWidgets('the stage reports the scale it actually drew at', (t) async {
+      final c = await pumpCollapsed(t);
+      final m = c.stageMetrics.value;
+      expect(c.isFit, isTrue);
+      expect(m.scale, greaterThan(0.2));
+      expect(m.scale, lessThanOrEqualTo(m.fitLimit + 0.001));
+      expect(find.text('${(m.scale * 100).round()}%'), findsOneWidget);
+    });
+
+    testWidgets('zooming out steps down and leaves fit mode', (t) async {
+      final c = await pumpCollapsed(t);
+      final before = c.stageMetrics.value.scale;
+
+      await t.tap(find.byTooltip('Zoom out'));
+      await t.pumpAndSettle();
+
+      expect(c.isFit, isFalse);
+      expect(c.zoom, lessThan(before));
+      expect(c.stageMetrics.value.scale, closeTo(c.zoom!, 0.001));
+      expect(DeviceLabController.zoomSteps, contains(c.zoom));
+    });
+
+    testWidgets('zoom in is unavailable when already at the largest fit',
+        (t) async {
+      final c = await pumpCollapsed(t);
+      expect(c.canZoomIn, isFalse);
+      expect(enabled(t, 'Zoom in'), isFalse);
+
+      await t.tap(find.byTooltip('Zoom out'));
+      await t.pumpAndSettle();
+      expect(c.canZoomIn, isTrue);
+      expect(enabled(t, 'Zoom in'), isTrue);
+
+      await t.tap(find.byTooltip('Zoom in'));
+      await t.pumpAndSettle();
+      expect(c.stageMetrics.value.scale, greaterThan(c.zoom! - 0.001));
+    });
+
+    testWidgets('the fit button returns to automatic sizing', (t) async {
+      final c = await pumpCollapsed(t);
+      final fitScale = c.stageMetrics.value.scale;
+      expect(enabled(t, 'Fit to screen'), isFalse);
+
+      await t.tap(find.byTooltip('Zoom out'));
+      await t.pumpAndSettle();
+      expect(enabled(t, 'Fit to screen'), isTrue);
+
+      await t.tap(find.byTooltip('Fit to screen'));
+      await t.pumpAndSettle();
+      expect(c.isFit, isTrue);
+      expect(c.stageMetrics.value.scale, closeTo(fitScale, 0.001));
+    });
+
+    testWidgets('a zoom larger than the space allows is drawn at the limit',
+        (t) async {
+      final c = await pumpCollapsed(t);
+      final limit = c.stageMetrics.value.fitLimit;
+
+      c.setZoom(4);
+      await t.pumpAndSettle();
+      expect(c.zoom, 4);
+      expect(c.stageMetrics.value.scale, closeTo(limit, 0.001));
+    });
+
+    testWidgets('the bar keeps zoom on a narrow phone', (t) async {
+      t.view.physicalSize = const Size(390, 844);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+
+      final c = await pumpCollapsed(t);
+      expect(find.byTooltip('Zoom out'), findsOneWidget);
+      expect(find.byTooltip('Zoom in'), findsOneWidget);
+      expect(find.byTooltip('Rotate'), findsOneWidget);
+      expect(find.text('iPhone 17 Pro'), findsOneWidget);
+
+      await t.tap(find.byTooltip('Zoom out'));
+      await t.pumpAndSettle();
+      expect(c.isFit, isFalse);
+    });
+
+    test('zoom is clamped and remembered', () {
+      SessionDeviceLabStorage.clear();
+      const store = SessionDeviceLabStorage();
+      final first = DeviceLabController(storage: store);
+      expect(first.isFit, isTrue);
+
+      first.setZoom(0.5);
+      expect(DeviceLabController(storage: store).zoom, 0.5);
+
+      first.setZoom(99);
+      expect(first.zoom, 4);
+      first.setZoom(0.001);
+      expect(first.zoom, 0.1);
+
+      first.setZoom(null);
+      expect(DeviceLabController(storage: store).isFit, isTrue);
+      SessionDeviceLabStorage.clear();
+    });
+  });
+
   group('golden helpers', () {
     testWidgets('applyDevice configures the test view', (t) async {
       final fold = DeviceCatalog.byId('google.pixel-10-pro-fold')!;
@@ -815,3 +1143,10 @@ class _Scope extends InheritedWidget {
   @override
   bool updateShouldNotify(_Scope old) => old.value != value;
 }
+
+IconData _iconFor(String tooltip) => switch (tooltip) {
+      'Zoom in' => Icons.add,
+      'Zoom out' => Icons.remove,
+      'Fit to screen' => Icons.fit_screen,
+      _ => throw ArgumentError(tooltip),
+    };

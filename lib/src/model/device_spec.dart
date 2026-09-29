@@ -2,6 +2,8 @@ import 'dart:ui' show DisplayFeature, DisplayFeatureType, DisplayFeatureState;
 
 import 'package:flutter/widgets.dart';
 
+import 'quarter_turn.dart';
+
 /// The operating system a device runs, used to pick its [TargetPlatform].
 enum DevicePlatform { ios, android, macos, windows, linux, fuchsia, web }
 
@@ -45,6 +47,11 @@ class ScreenCutout {
 
   /// Whether this intrusion is reported as a [DisplayFeature].
   final bool obstructing;
+
+  /// The intrusion's bounds once the device is turned a quarter turn away
+  /// from [naturalScreen], the screen size in its natural orientation.
+  Rect resolveRotated(Size naturalScreen) =>
+      rotateRectCcw(resolve(naturalScreen), naturalScreen);
 
   /// The intrusion's bounds on a screen of the given logical [screen] size.
   Rect resolve(Size screen) {
@@ -123,8 +130,11 @@ class DeviceScreen {
     this.cutouts = const [],
     this.hinge,
     this.cornerRadius = 0,
+    this.corners,
     this.rotatable = true,
     this.naturalOrientation = Orientation.portrait,
+    this.frame,
+    this.ppi,
   }) : _safeAreaRotated = safeAreaRotated;
 
   /// Human readable name, such as `Main` or `Cover`.
@@ -152,8 +162,23 @@ class DeviceScreen {
   /// Corner rounding in logical pixels, used to clip the preview.
   final double cornerRadius;
 
+  /// Per-corner rounding, overriding [cornerRadius] when set.
+  ///
+  /// Given for the screen in its natural orientation. Foldables use this
+  /// because the spine side is nearly square while the outer side is round.
+  final BorderRadius? corners;
+
   /// Whether the orientation toggle applies to this screen.
   final bool rotatable;
+
+  /// The body drawn around this screen, overriding [DeviceSpec.frame].
+  ///
+  /// A foldable's cover screen and its open screen sit in very different
+  /// bodies, so each can carry its own.
+  final DeviceFrame? frame;
+
+  /// Pixel density in pixels per inch, when the vendor publishes it.
+  final double? ppi;
 
   /// The orientation this screen is designed to be held in.
   ///
@@ -172,6 +197,32 @@ class DeviceScreen {
         right: safeArea.top > 24 ? safeArea.top * 0.8 : 0,
         bottom: safeArea.bottom > 0 ? 21 : 0,
       );
+
+  /// The screen's corner rounding in its natural orientation.
+  BorderRadius get borderRadius =>
+      corners ?? BorderRadius.circular(cornerRadius);
+
+  /// [borderRadius] for the given orientation, turned with the device.
+  BorderRadius borderRadiusFor(Orientation orientation) =>
+      orientation == naturalOrientation
+          ? borderRadius
+          : rotateRadiiCcw(borderRadius);
+
+  /// Where each entry of [cutouts] sits on the screen in the given
+  /// orientation, in the same order.
+  ///
+  /// Turning the device carries the camera intrusion with it, so a Dynamic
+  /// Island at the top in portrait is a vertical pill on the left edge in
+  /// landscape.
+  List<Rect> cutoutRectsFor(Orientation orientation) {
+    final natural = sizeFor(naturalOrientation);
+    return [
+      for (final cutout in cutouts)
+        orientation == naturalOrientation
+            ? cutout.resolve(natural)
+            : cutout.resolveRotated(natural),
+    ];
+  }
 
   /// Size in physical pixels, that is [logicalSize] times [pixelRatio].
   Size get resolution =>
@@ -202,17 +253,23 @@ class DeviceScreen {
 
   /// Display features to publish for the given orientation and posture.
   ///
-  /// Cutouts are included only in [naturalOrientation]; the hinge, when
-  /// present, is always included with its rotated axis.
+  /// Cutouts are reported in every orientation, moved to wherever the device
+  /// turn carries them, and the hinge, when present, comes with its rotated
+  /// axis.
   List<DisplayFeature> displayFeaturesFor(
     Orientation orientation,
     FoldPosture posture,
   ) {
     final size = sizeFor(orientation);
+    final rects = cutoutRectsFor(orientation);
     return [
-      for (final cutout in cutouts)
-        if (cutout.obstructing && orientation == naturalOrientation)
-          cutout.toDisplayFeature(size),
+      for (var i = 0; i < cutouts.length; i++)
+        if (cutouts[i].obstructing)
+          DisplayFeature(
+            bounds: rects[i],
+            type: DisplayFeatureType.cutout,
+            state: DisplayFeatureState.unknown,
+          ),
       if (hinge != null)
         hinge!.toDisplayFeature(size, posture, hingeAxisFor(orientation)),
     ];
@@ -228,9 +285,15 @@ class DeviceScreen {
     List<ScreenCutout>? cutouts,
     HingeSpec? hinge,
     double? cornerRadius,
+    BorderRadius? corners,
+    DeviceFrame? frame,
+    double? ppi,
   }) =>
       DeviceScreen(
         naturalOrientation: naturalOrientation,
+        corners: corners ?? this.corners,
+        frame: frame ?? this.frame,
+        ppi: ppi ?? this.ppi,
         label: label ?? this.label,
         logicalSize: logicalSize ?? this.logicalSize,
         pixelRatio: pixelRatio ?? this.pixelRatio,
@@ -249,9 +312,12 @@ class DeviceFrame {
   const DeviceFrame({
     this.bezel = const EdgeInsets.all(12),
     this.outerRadius = 48,
+    this.corners,
     this.bodyColor = const Color(0xFF1C1C1E),
     this.edgeColor = const Color(0xFF48484A),
+    this.rimWidth = 3,
     this.buttons = const [],
+    this.spine,
   });
 
   /// A frame that draws nothing, used for bare viewports.
@@ -267,14 +333,49 @@ class DeviceFrame {
   /// Corner rounding of the device body.
   final double outerRadius;
 
+  /// Per-corner rounding of the device body, overriding [outerRadius].
+  ///
+  /// Given in the body's natural orientation.
+  final BorderRadius? corners;
+
+  /// The body's corner rounding in its natural orientation.
+  BorderRadius get outerBorderRadius =>
+      corners ?? BorderRadius.circular(outerRadius);
+
   /// Fill colour of the device body.
   final Color bodyColor;
 
-  /// Colour of the body's outline.
+  /// Colour of the metal rim around the body.
   final Color edgeColor;
+
+  /// Thickness of the metal rim.
+  final double rimWidth;
 
   /// Physical buttons drawn along the edges.
   final List<DeviceButton> buttons;
+
+  /// The hinge spine seen edge-on along one side of a closed foldable.
+  final FrameSpine? spine;
+}
+
+/// The hinge spine of a closed foldable, seen edge-on along one side.
+@immutable
+class FrameSpine {
+  /// Creates a spine on [side], [width] thick.
+  const FrameSpine({
+    required this.side,
+    this.width = 9,
+    this.color = const Color(0xFF8E8A80),
+  });
+
+  /// Which edge of the body the spine runs along.
+  final AxisDirection side;
+
+  /// Thickness of the spine.
+  final double width;
+
+  /// Metal colour of the spine.
+  final Color color;
 }
 
 /// A physical button drawn on the side of a device frame.
@@ -292,6 +393,43 @@ class DeviceButton {
 
   /// Length of the button as a fraction of the edge.
   final double length;
+
+  /// The button's rectangle on a body of the given natural size.
+  ///
+  /// It stands [protrusion] proud of the edge, and overlaps the body by one
+  /// unit so there is no visible seam.
+  Rect rect(Size body, {double protrusion = 3}) {
+    switch (side) {
+      case AxisDirection.left:
+        return Rect.fromLTWH(
+          -protrusion,
+          start * body.height,
+          protrusion + 1,
+          length * body.height,
+        );
+      case AxisDirection.right:
+        return Rect.fromLTWH(
+          body.width - 1,
+          start * body.height,
+          protrusion + 1,
+          length * body.height,
+        );
+      case AxisDirection.up:
+        return Rect.fromLTWH(
+          start * body.width,
+          -protrusion,
+          length * body.width,
+          protrusion + 1,
+        );
+      case AxisDirection.down:
+        return Rect.fromLTWH(
+          start * body.width,
+          body.height - 1,
+          length * body.width,
+          protrusion + 1,
+        );
+    }
+  }
 }
 
 /// A device in the catalog.
@@ -327,6 +465,10 @@ class DeviceSpec {
   final int? releaseYear;
 
   DeviceScreen get primaryScreen => screens.first;
+
+  /// The body drawn around [screen]: its own frame when it has one,
+  /// otherwise this device's [frame].
+  DeviceFrame frameFor(DeviceScreen screen) => screen.frame ?? frame;
 
   bool get isFoldable => category == DeviceCategory.foldable;
 

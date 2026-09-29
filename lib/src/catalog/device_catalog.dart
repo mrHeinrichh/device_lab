@@ -130,30 +130,67 @@ abstract final class DeviceSpecCodec {
         'category': d.category.name,
         if (d.diagonalInches != null) 'diagonalInches': d.diagonalInches,
         if (d.releaseYear != null) 'releaseYear': d.releaseYear,
-        'frame': {
-          'bezel': _insetsToJson(d.frame.bezel),
-          'outerRadius': d.frame.outerRadius,
-          'bodyColor': d.frame.bodyColor.toARGB32(),
-          'edgeColor': d.frame.edgeColor.toARGB32(),
-        },
+        'frame': _frameToJson(d.frame),
         'screens': d.screens.map(_screenToJson).toList(),
       };
 
   static DeviceFrame _frameFromJson(Map<String, dynamic>? json) {
     if (json == null) return const DeviceFrame();
+    final spine = json['spine'] as Map<String, dynamic>?;
     return DeviceFrame(
       bezel: _insetsFromJson(json['bezel']),
       outerRadius: (json['outerRadius'] as num?)?.toDouble() ?? 48,
+      corners: json['corners'] == null ? null : _radiiFromJson(json['corners']),
       bodyColor: Color(json['bodyColor'] as int? ?? 0xFF1C1C1E),
       edgeColor: Color(json['edgeColor'] as int? ?? 0xFF48484A),
+      rimWidth: (json['rimWidth'] as num?)?.toDouble() ?? 3,
+      buttons: ((json['buttons'] as List<dynamic>?) ?? const [])
+          .cast<Map<String, dynamic>>()
+          .map((b) => DeviceButton(
+                AxisDirection.values.byName(b['side'] as String),
+                (b['start'] as num).toDouble(),
+                (b['length'] as num).toDouble(),
+              ))
+          .toList(),
+      spine: spine == null
+          ? null
+          : FrameSpine(
+              side: AxisDirection.values.byName(spine['side'] as String),
+              width: (spine['width'] as num?)?.toDouble() ?? 9,
+              color: Color(spine['color'] as int? ?? 0xFF8E8A80),
+            ),
     );
   }
+
+  static Map<String, dynamic> _frameToJson(DeviceFrame f) => {
+        'bezel': _insetsToJson(f.bezel),
+        'outerRadius': f.outerRadius,
+        if (f.corners != null) 'corners': _radiiToJson(f.corners!),
+        'bodyColor': f.bodyColor.toARGB32(),
+        'edgeColor': f.edgeColor.toARGB32(),
+        'rimWidth': f.rimWidth,
+        if (f.buttons.isNotEmpty)
+          'buttons': f.buttons
+              .map((b) => {
+                    'side': b.side.name,
+                    'start': b.start,
+                    'length': b.length,
+                  })
+              .toList(),
+        if (f.spine != null)
+          'spine': {
+            'side': f.spine!.side.name,
+            'width': f.spine!.width,
+            'color': f.spine!.color.toARGB32(),
+          },
+      };
 
   static DeviceScreen _screenFromJson(Map<String, dynamic> json) =>
       DeviceScreen(
         label: json['label'] as String? ?? 'Main',
         logicalSize: _sizeFromJson(json['logicalSize']),
         pixelRatio: (json['pixelRatio'] as num).toDouble(),
+        ppi: (json['ppi'] as num?)?.toDouble(),
         safeArea: _insetsFromJson(json['safeArea']),
         safeAreaRotated: json['safeAreaRotated'] == null
             ? null
@@ -163,16 +200,26 @@ abstract final class DeviceSpecCodec {
                 ? Orientation.landscape
                 : Orientation.portrait,
         cornerRadius: (json['cornerRadius'] as num?)?.toDouble() ?? 0,
+        corners:
+            json['corners'] == null ? null : _radiiFromJson(json['corners']),
         rotatable: json['rotatable'] as bool? ?? true,
+        frame: json['frame'] == null
+            ? null
+            : _frameFromJson(json['frame'] as Map<String, dynamic>),
         cutouts: ((json['cutouts'] as List<dynamic>?) ?? const [])
             .cast<Map<String, dynamic>>()
             .map((c) => ScreenCutout(
                   shape: CutoutShape.values.byName(c['shape'] as String),
                   size: _sizeFromJson(c['size']),
+                  alignment: Alignment(
+                    (c['ax'] as num?)?.toDouble() ?? 0,
+                    (c['ay'] as num?)?.toDouble() ?? -1,
+                  ),
                   offset: Offset(
                     (c['dx'] as num?)?.toDouble() ?? 0,
                     (c['dy'] as num?)?.toDouble() ?? 0,
                   ),
+                  obstructing: c['obstructing'] as bool? ?? true,
                 ))
             .toList(),
         hinge: json['hinge'] == null
@@ -190,18 +237,24 @@ abstract final class DeviceSpecCodec {
         'label': s.label,
         'logicalSize': _sizeToJson(s.logicalSize),
         'pixelRatio': s.pixelRatio,
+        if (s.ppi != null) 'ppi': s.ppi,
         'safeArea': _insetsToJson(s.safeArea),
         'safeAreaRotated': _insetsToJson(s.safeAreaRotated),
         'naturalOrientation': s.naturalOrientation.name,
         'cornerRadius': s.cornerRadius,
+        if (s.corners != null) 'corners': _radiiToJson(s.corners!),
         'rotatable': s.rotatable,
+        if (s.frame != null) 'frame': _frameToJson(s.frame!),
         if (s.cutouts.isNotEmpty)
           'cutouts': s.cutouts
               .map((c) => {
                     'shape': c.shape.name,
                     'size': _sizeToJson(c.size),
+                    'ax': c.alignment.x,
+                    'ay': c.alignment.y,
                     'dx': c.offset.dx,
                     'dy': c.offset.dy,
+                    'obstructing': c.obstructing,
                   })
               .toList(),
         if (s.hinge != null)
@@ -209,6 +262,24 @@ abstract final class DeviceSpecCodec {
             'axis': s.hinge!.axis.name,
             'thickness': s.hinge!.thickness,
           },
+      };
+
+  static BorderRadius _radiiFromJson(dynamic json) {
+    final map = json as Map<String, dynamic>;
+    Radius r(String key) => Radius.circular((map[key] as num? ?? 0).toDouble());
+    return BorderRadius.only(
+      topLeft: r('tl'),
+      topRight: r('tr'),
+      bottomRight: r('br'),
+      bottomLeft: r('bl'),
+    );
+  }
+
+  static Map<String, dynamic> _radiiToJson(BorderRadius r) => {
+        'tl': r.topLeft.x,
+        'tr': r.topRight.x,
+        'br': r.bottomRight.x,
+        'bl': r.bottomLeft.x,
       };
 
   static Size _sizeFromJson(dynamic json) {

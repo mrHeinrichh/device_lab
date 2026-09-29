@@ -120,24 +120,120 @@ DeviceSpec _tablet({
       screens: [_ipad(size, radius: radius)],
     );
 
-final List<DeviceSpec> appleDevices = [
-  _phone(
+const _titanium = Color(0xFFBDB6A8);
+const _duoGlass = Color(0xFF0B0B0D);
+
+EdgeInsets _bezelFromBody({
+  required Size screen,
+  required Size pixels,
+  required double ppi,
+  required Size bodyMm,
+}) {
+  final pointsPerMm = screen.width / (pixels.width / ppi * 25.4);
+  return EdgeInsets.symmetric(
+    horizontal: (bodyMm.width * pointsPerMm - screen.width) / 2,
+    vertical: (bodyMm.height * pointsPerMm - screen.height) / 2,
+  );
+}
+
+DeviceSpec _iphoneDuo() {
+  final openBezel = _bezelFromBody(
+    screen: const Size(890, 626),
+    pixels: const Size(2670, 1878),
+    ppi: 430,
+    bodyMm: const Size(164.6, 117.8),
+  );
+  final closedBezel = _bezelFromBody(
+    screen: const Size(466, 678),
+    pixels: const Size(1398, 2034),
+    ppi: 460,
+    bodyMm: const Size(84.1, 117.8),
+  );
+  const spineShift = 3.5;
+
+  final open = DeviceFrame(
+    bezel: openBezel,
+    corners: BorderRadius.circular(64),
+    bodyColor: _duoGlass,
+    edgeColor: _titanium,
+    rimWidth: 5,
+    buttons: const [
+      DeviceButton(AxisDirection.up, 0.733, 0.0225),
+      DeviceButton(AxisDirection.up, 0.811, 0.0225),
+      DeviceButton(AxisDirection.right, 0.29, 0.15),
+    ],
+  );
+  final closed = DeviceFrame(
+    bezel: EdgeInsets.fromLTRB(
+      closedBezel.left + spineShift,
+      closedBezel.top,
+      closedBezel.right - spineShift,
+      closedBezel.bottom,
+    ),
+    corners: const BorderRadius.only(
+      topLeft: Radius.circular(20),
+      topRight: Radius.circular(78),
+      bottomRight: Radius.circular(78),
+      bottomLeft: Radius.circular(20),
+    ),
+    bodyColor: _duoGlass,
+    edgeColor: _titanium,
+    rimWidth: 5,
+    spine: const FrameSpine(side: AxisDirection.left, width: 11),
+    buttons: const [
+      DeviceButton(AxisDirection.up, 0.466, 0.045),
+      DeviceButton(AxisDirection.up, 0.623, 0.045),
+      DeviceButton(AxisDirection.right, 0.29, 0.15),
+    ],
+  );
+
+  return _phone(
     id: 'apple.iphone-duo',
     name: 'iPhone Duo',
     diagonal: 7.6,
     year: 2026,
     category: DeviceCategory.foldable,
+    frame: open,
     screens: [
-      _iphone(
-        const Size(626, 890),
-        top: 62,
-        radius: 30,
-        natural: Orientation.landscape,
+      DeviceScreen(
+        label: 'Main',
+        logicalSize: const Size(626, 890),
+        pixelRatio: 3,
+        ppi: 430,
+        safeArea: const EdgeInsets.only(top: 62, bottom: 34),
+        naturalOrientation: Orientation.landscape,
         hinge: const HingeSpec(axis: Axis.vertical),
+        corners: BorderRadius.circular(45),
+        frame: open,
       ),
-      _iphone(const Size(466, 678), top: 62, radius: 48, label: 'Cover'),
+      DeviceScreen(
+        label: 'Cover',
+        logicalSize: const Size(466, 678),
+        pixelRatio: 3,
+        ppi: 460,
+        safeArea: const EdgeInsets.only(top: 62, bottom: 34),
+        cutouts: const [
+          ScreenCutout(
+            shape: CutoutShape.dynamicIsland,
+            size: Size(38, 38),
+            alignment: Alignment.topRight,
+            offset: Offset(-29, 28),
+          ),
+        ],
+        corners: const BorderRadius.only(
+          topLeft: Radius.circular(8),
+          topRight: Radius.circular(58),
+          bottomRight: Radius.circular(58),
+          bottomLeft: Radius.circular(8),
+        ),
+        frame: closed,
+      ),
     ],
-  ),
+  );
+}
+
+final List<DeviceSpec> appleDevices = [
+  _iphoneDuo(),
   _phone(
     id: 'apple.iphone-18-pro-max',
     name: 'iPhone 18 Pro Max',
