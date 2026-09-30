@@ -1,3 +1,24 @@
+## 0.3.3
+
+- Fixed the app being laid out in whatever space was left in the window instead
+  of at the simulated device size. `MediaQuery` reported the simulated size
+  while layout used the smaller area, so any device larger than the stage got
+  overflows and broken layouts. It showed up on phone-sized windows, where
+  nearly every device is larger than the stage. The app is now always laid out
+  at the exact simulated size and then scaled, and touches reach the whole
+  scaled device.
+- Fixed the lab's own `MaterialApp` sitting above your app. That made "the
+  root navigator" the lab's, so `Navigator.of(context, rootNavigator: true)`,
+  `showDialog`, date pickers and `Get.bottomSheet(useRootNavigator: true)` all
+  landed on the lab's navigator. Dismissing through the root navigator removed
+  your whole app, and anything opened that way appeared outside your provider
+  scope, theme and the device frame, which surfaced as errors such as "No
+  ProviderScope found". Nothing the lab owns is an ancestor of your app any
+  more: the tools panel and the compact bar run in their own isolated
+  `MaterialApp`s beside it, so dialogs, sheets and pickers open inside the
+  device screen.
+- No API changes.
+
 ## 0.3.2
 
 - Corrected several flip cover screens, which were wrong. The cover sizes and

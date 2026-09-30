@@ -1294,6 +1294,239 @@ void main() {
     });
   });
 
+  group('app isolation', () {
+    Widget lab(DeviceLabController c, Widget home) => DeviceLab(
+          controller: c,
+          builder: (_) => _Scope(
+            value: 42,
+            child: MaterialApp(builder: DeviceLab.appBuilder, home: home),
+          ),
+        );
+
+    void smallWindow(WidgetTester t) {
+      t.view.physicalSize = const Size(390, 844);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+    }
+
+    testWidgets(
+        'the app is laid out at the simulated size even when it does '
+        'not fit the window', (t) async {
+      smallWindow(t);
+      Size? seen;
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(
+        lab(
+          c,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              seen = constraints.biggest;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(seen, const Size(402, 874));
+
+      for (final id in [
+        'apple.iphone-duo',
+        'apple.ipad-pro-13-m4',
+        'samsung.galaxy-z-flip-8',
+        'res.desktop-3840x2160',
+      ]) {
+        c.selectDeviceId(id);
+        await t.pumpAndSettle();
+        expect(seen, c.logicalSize, reason: id);
+      }
+
+      c.selectDeviceId('samsung.galaxy-z-flip-8');
+      c.setPosture(FoldPosture.folded);
+      c.setOrientation(Orientation.landscape);
+      await t.pumpAndSettle();
+      expect(seen, c.logicalSize);
+    });
+
+    testWidgets('a page that needs the simulated height does not overflow',
+        (t) async {
+      smallWindow(t);
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(
+        lab(
+          c,
+          Column(
+            children: const [
+              SizedBox(height: 118, width: double.infinity),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(height: 250, width: 250),
+                    SizedBox(height: 120, width: 250),
+                  ],
+                ),
+              ),
+              SizedBox(height: 126, width: double.infinity),
+            ],
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+    });
+
+    Future<int> tapCorners(WidgetTester t, DeviceLabController c) async {
+      var hits = 0;
+      final keys = List.generate(4, (_) => GlobalKey());
+      Widget corner(Alignment a, GlobalKey k) => Align(
+            alignment: a,
+            child: Padding(
+              padding: const EdgeInsets.all(70),
+              child: GestureDetector(
+                key: k,
+                behavior: HitTestBehavior.opaque,
+                onTap: () => hits++,
+                child: const SizedBox(width: 40, height: 40),
+              ),
+            ),
+          );
+      await t.pumpWidget(
+        lab(
+          c,
+          Stack(
+            children: [
+              corner(Alignment.topLeft, keys[0]),
+              corner(Alignment.topRight, keys[1]),
+              corner(Alignment.bottomLeft, keys[2]),
+              corner(Alignment.bottomRight, keys[3]),
+            ],
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      for (final k in keys) {
+        await t.tap(find.byKey(k), warnIfMissed: false);
+      }
+      return hits;
+    }
+
+    testWidgets('taps reach the edges of a device that is scaled down',
+        (t) async {
+      smallWindow(t);
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      expect(await tapCorners(t, c), 4);
+      expect(c.stageMetrics.value.scale, lessThan(1));
+    });
+
+    testWidgets('taps reach the edges of a device that is scaled up',
+        (t) async {
+      t.view.physicalSize = const Size(1600, 1400);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      expect(await tapCorners(t, c), 4);
+      expect(c.stageMetrics.value.scale, greaterThan(1));
+    });
+
+    testWidgets('the app owns the root navigator', (t) async {
+      late BuildContext inside;
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(
+        lab(
+          c,
+          Builder(
+            builder: (context) {
+              inside = context;
+              return const _Counter();
+            },
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+
+      expect(
+        Navigator.of(inside, rootNavigator: true),
+        same(Navigator.of(inside)),
+      );
+      expect(
+        find.ancestor(
+          of: find.byType(_Counter),
+          matching: find.byType(MaterialApp),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(
+          of: find.byType(_Counter),
+          matching: find.byType(Navigator),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    Widget openDialogButton() => Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (dialog) => Text(
+                'dialog ${_Scope.of(dialog)} '
+                '${MediaQuery.sizeOf(dialog).width.round()}',
+                textDirection: TextDirection.ltr,
+              ),
+            ),
+            child: const Text('open'),
+          ),
+        );
+
+    testWidgets('a dialog opens inside the device and under the app scope',
+        (t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(lab(c, openDialogButton()));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('open'));
+      await t.pumpAndSettle();
+
+      expect(find.text('dialog 42 402'), findsOneWidget);
+      expect(t.takeException(), isNull);
+      final stage = t.getRect(find.byType(DeviceStage));
+      final dialog = t.getCenter(find.text('dialog 42 402'));
+      expect(stage.contains(dialog), isTrue);
+    });
+
+    testWidgets('dismissing through the root navigator keeps the app alive',
+        (t) async {
+      late BuildContext inside;
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(
+        lab(
+          c,
+          Builder(
+            builder: (context) {
+              inside = context;
+              return Material(
+                child: Column(
+                  children: [openDialogButton(), const Text('alive')],
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      await t.tap(find.text('open'));
+      await t.pumpAndSettle();
+      expect(find.textContaining('dialog 42'), findsOneWidget);
+
+      Navigator.of(inside, rootNavigator: true).pop();
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('dialog 42'), findsNothing);
+      expect(find.text('alive'), findsOneWidget);
+      expect(find.text('open'), findsOneWidget);
+    });
+  });
+
   group('golden helpers', () {
     testWidgets('applyDevice configures the test view', (t) async {
       final fold = DeviceCatalog.byId('google.pixel-10-pro-fold')!;

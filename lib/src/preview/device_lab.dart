@@ -254,24 +254,41 @@ class _DeviceLabHost extends StatelessWidget {
     final controller = DeviceLab.of(context);
     if (!controller.enabled) return app;
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF3D5AFE),
-          brightness: Brightness.dark,
+    return MediaQuery.fromView(
+      view: View.of(context),
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: _HostShell(
+          controller: controller,
+          availableLocales: availableLocales,
+          backgroundColor: backgroundColor,
+          showRestoreButton: showRestoreButton,
+          child: app,
         ),
-      ),
-      home: _HostShell(
-        controller: controller,
-        availableLocales: availableLocales,
-        backgroundColor: backgroundColor,
-        showRestoreButton: showRestoreButton,
-        child: app,
       ),
     );
   }
+}
+
+class _LabApp extends StatelessWidget {
+  const _LabApp({required this.child});
+
+  final Widget child;
+
+  static final ThemeData _theme = ThemeData(
+    useMaterial3: true,
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: const Color(0xFF3D5AFE),
+      brightness: Brightness.dark,
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: _theme,
+        home: child,
+      );
 }
 
 class _HostShell extends StatelessWidget {
@@ -293,56 +310,65 @@ class _HostShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final expanded = controller.previewing && controller.toolsVisible;
     final collapsed = controller.previewing && !controller.toolsVisible;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
 
-    return Scaffold(
-      resizeToAvoidBottomInset: false,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final sidebar = expanded && constraints.maxWidth >= 900;
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: Flex(
-                  direction: sidebar ? Axis.horizontal : Axis.vertical,
-                  textDirection: TextDirection.rtl,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: ColoredBox(
-                        color: controller.previewing
-                            ? (backgroundColor ?? const Color(0xFF15151A))
-                            : const Color(0x00000000),
-                        child: DeviceStage(
-                          controller: controller,
-                          child: child,
-                        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final sidebar = expanded && constraints.maxWidth >= 900;
+        final barHeight =
+            _CompactBar.heightFor(constraints.maxWidth, bottomInset);
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: Flex(
+                direction: sidebar ? Axis.horizontal : Axis.vertical,
+                textDirection: TextDirection.rtl,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: ColoredBox(
+                      color: controller.previewing
+                          ? (backgroundColor ?? const Color(0xFF15151A))
+                          : const Color(0x00000000),
+                      child: DeviceStage(
+                        controller: controller,
+                        child: child,
                       ),
                     ),
-                    SizedBox(
-                      width: sidebar ? 320 : null,
-                      height: sidebar || !expanded ? null : 300,
-                      child: expanded
-                          ? ToolsPanel(
+                  ),
+                  SizedBox(
+                    width: sidebar ? 320 : null,
+                    height: sidebar
+                        ? null
+                        : expanded
+                            ? 300
+                            : collapsed
+                                ? barHeight
+                                : 0,
+                    child: expanded
+                        ? _LabApp(
+                            child: ToolsPanel(
                               controller: controller,
                               availableLocales: availableLocales,
-                            )
-                          : collapsed
-                              ? _CompactBar(controller: controller)
-                              : null,
-                    ),
-                  ],
-                ),
+                            ),
+                          )
+                        : collapsed
+                            ? _LabApp(
+                                child: _CompactBar(controller: controller))
+                            : null,
+                  ),
+                ],
               ),
-              Positioned.fill(
-                child: _Chrome(
-                  controller: controller,
-                  showRestoreButton: showRestoreButton,
-                ),
+            ),
+            Positioned.fill(
+              child: _Chrome(
+                controller: controller,
+                showRestoreButton: showRestoreButton,
               ),
-            ],
-          );
-        },
-      ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -358,6 +384,11 @@ IconData _categoryIcon(DeviceCategory category) => switch (category) {
 
 class _CompactBar extends StatelessWidget {
   const _CompactBar({required this.controller});
+
+  static const double wideBreakpoint = 680;
+
+  static double heightFor(double width, double bottomInset) =>
+      1 + (width >= wideBreakpoint ? 56 : 92) + bottomInset;
 
   final DeviceLabController controller;
 
@@ -375,7 +406,7 @@ class _CompactBar extends StatelessWidget {
             top: false,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 680;
+                final wide = constraints.maxWidth >= _CompactBar.wideBreakpoint;
                 final info = Expanded(child: _DeviceInfo(controller));
                 final actions = [
                   IconButton(

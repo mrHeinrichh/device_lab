@@ -59,23 +59,23 @@ class DeviceStage extends StatelessWidget {
           controller.reportStage(scale: scale, fitLimit: fitLimit);
         }
 
-        return Center(
+        return OverflowBox(
+          minWidth: outer.width,
+          maxWidth: outer.width,
+          minHeight: outer.height,
+          maxHeight: outer.height,
           child: Transform.scale(
             scale: scale,
-            child: SizedBox(
-              width: outer.width,
-              height: outer.height,
-              child: _Frame(
-                frame: frame,
-                bezel: bezel,
-                turns: turns,
-                controller: controller,
-                screen: screen,
-                orientation: orientation,
-                size: size,
-                previewing: previewing,
-                child: child,
-              ),
+            child: _Frame(
+              frame: frame,
+              bezel: bezel,
+              turns: turns,
+              controller: controller,
+              screen: screen,
+              orientation: orientation,
+              size: size,
+              previewing: previewing,
+              child: child,
             ),
           ),
         );

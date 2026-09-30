@@ -3,7 +3,7 @@ description: >-
   Preview your Flutter app on any device without a simulator: 150 devices,
   foldables with real display features, free-form resolutions, and
   golden-test integration.
-version: 0.3.2
+version: 0.3.3
 repository: https://github.com/mrHeinrichh/device_lab
 issue_tracker: https://github.com/mrHeinrichh/device_lab/issues
 screenshots:

@@ -151,6 +151,16 @@ work, and correctable without touching package code. If a value is wrong for
 hardware you own, open an issue with the output of `MediaQuery.of(context)`
 from that device and it becomes a one-line data fix.
 
+## Your app stays the root
+
+The lab wraps your app in a stage, not in another app. Nothing it owns sits
+between your app and its `Navigator`, `Overlay` or provider scope, so
+`rootNavigator: true`, `showDialog`, `Get.bottomSheet`, pickers and any
+`InheritedWidget` or `ProviderScope` you place inside `DeviceLab.builder` all
+behave as they do without it, and dialogs open inside the device screen. The
+app is laid out at the exact simulated size and then scaled to fit, so a
+device larger than the window does not change its layout.
+
 ## Rotating and zooming
 
 Rotate turns the whole device, not just the screen. The camera cutout, side
