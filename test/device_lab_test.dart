@@ -1,8 +1,12 @@
+import 'dart:convert';
+import 'dart:ui' as ui;
+
 import 'package:device_lab/device_lab.dart';
 import 'package:device_lab/device_lab_testing.dart';
 import 'package:device_lab/src/model/quarter_turn.dart';
 import 'package:device_lab/src/preview/device_body.dart';
 import 'package:device_lab/src/preview/device_stage.dart';
+import 'package:device_lab/src/preview/service_extensions.dart';
 import 'package:device_lab/src/preview/tools_panel.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -653,6 +657,343 @@ void main() {
       c.setPreviewing(true);
       await t.pumpAndSettle();
       expect(find.text('42'), findsOneWidget);
+    });
+  });
+
+  group('service extensions', () {
+    const wideRow = 500.0;
+
+    // The sweep chains the previous handler, and the test binding's handler
+    // would fail the test on the overflows we provoke on purpose. Only swap it
+    // while the lab runs, so a failing expect() still reports normally.
+    Future<T> quietly<T>(Future<T> Function() body) async {
+      final saved = FlutterError.onError;
+      FlutterError.onError = (_) {};
+      try {
+        return await body();
+      } finally {
+        FlutterError.onError = saved;
+      }
+    }
+
+    Future<DeviceLabController> mount(WidgetTester t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await quietly(() async {
+        await t.pumpWidget(
+          DeviceLab(
+            controller: c,
+            builder: (_) => MaterialApp(
+              builder: DeviceLab.appBuilder,
+              home: const Scaffold(
+                body: Row(children: [SizedBox(width: wideRow, height: 20)]),
+              ),
+            ),
+          ),
+        );
+        await t.pumpAndSettle();
+      });
+      return c;
+    }
+
+    // Runs [fn] on the real clock while pumping frames, because the handlers
+    // wait on real timers and on the next frame.
+    Future<T> drive<T>(WidgetTester t, Future<T> Function() fn) async {
+      final result = await quietly(() async {
+        return t.runAsync(() async {
+          var done = false;
+          final future = fn().whenComplete(() => done = true);
+          while (!done) {
+            await Future<void>.delayed(const Duration(milliseconds: 2));
+            await t.pump();
+          }
+          return future;
+        });
+      });
+      return result as T;
+    }
+
+    List<Map<String, Object?>> resultsOf(Map<String, Object?> r) =>
+        (r['results']! as List).cast<Map<String, Object?>>();
+
+    Map<String, String> sweepParams(String ids, [Map<String, String>? more]) =>
+        {'ids': ids, 'settleMs': '0', ...?more};
+
+    test('devices filters by category, platform and ids', () {
+      List<Map<String, Object?>> list(Map<String, String> p) =>
+          (deviceLabDevices(p)['devices']! as List).cast();
+
+      final tablets = DeviceCatalog.all
+          .where((d) => d.category == DeviceCategory.tablet)
+          .map((d) => d.id)
+          .toList();
+      final result = deviceLabDevices({'category': 'tablet'});
+      expect(result['count'], tablets.length);
+      expect([
+        for (final d in list({'category': 'tablet'})) d['id']
+      ], tablets);
+
+      final iosTablets = list({'category': 'tablet', 'platform': 'iOS'});
+      expect(iosTablets, isNotEmpty);
+      expect(iosTablets.length, lessThan(tablets.length));
+      expect(iosTablets.every((d) => d['platform'] == 'iOS'), isTrue);
+
+      final byIds = list({
+        'ids': 'apple.iphone-17-pro, samsung.galaxy-z-fold-7',
+        'category': 'tablet',
+      });
+      expect([for (final d in byIds) d['id']],
+          ['apple.iphone-17-pro', 'samsung.galaxy-z-fold-7']);
+      expect(byIds.last['foldable'], isTrue);
+      expect(byIds.first['foldable'], isFalse);
+      expect(byIds.first['rotatable'], isTrue);
+      expect(byIds.first['size'], hasLength(2));
+
+      expect(
+        () => deviceLabDevices({'category': 'toaster'}),
+        throwsA(isA<DeviceLabExtensionException>()
+            .having((e) => e.invalidParams, 'invalidParams', isTrue)),
+      );
+      expect(() => deviceLabDevices({'platform': 'amiga'}),
+          throwsA(isA<DeviceLabExtensionException>()));
+      expect(() => deviceLabDevices({'ids': 'nope'}),
+          throwsA(isA<DeviceLabExtensionException>()));
+    });
+
+    testWidgets('the mounted lab is the extensions target', (t) async {
+      final c = await mount(t);
+      expect(currentExtensionTarget?.controller, same(c));
+      await quietly(() => t.pumpWidget(const SizedBox()));
+      expect(currentExtensionTarget, isNull);
+    });
+
+    testWidgets('sweep reports overflows on phones but not tablets', (t) async {
+      final c = await mount(t);
+      final r = await drive(
+        t,
+        () => deviceLabSweep(
+          c,
+          currentExtensionTarget!.captureKey,
+          sweepParams('apple.iphone-17-pro,apple.ipad-pro-13-m4',
+              {'orientations': 'natural'}),
+        ),
+      );
+      final cases = resultsOf(r);
+      expect(cases, hasLength(2));
+      expect(r['count'], 2);
+      expect(r['failed'], 1);
+
+      final phone = cases.first;
+      expect(phone['id'], 'apple.iphone-17-pro');
+      expect(phone['orientation'], 'portrait');
+      expect(phone['posture'], isNull);
+      final errors = (phone['errors']! as List).cast<String>();
+      expect(errors, hasLength(1));
+      expect(errors.single, contains('RenderFlex overflowed'));
+      expect(errors.single, contains('device_lab_test.dart'));
+      expect(errors.single, isNot(startsWith('[device_lab]')));
+
+      expect(cases.last['errors'], isEmpty);
+    });
+
+    testWidgets('sweep expands orientations and postures', (t) async {
+      final c = await mount(t);
+      final key = currentExtensionTarget!.captureKey;
+
+      final both = resultsOf(await drive(
+        t,
+        () => deviceLabSweep(c, key, sweepParams('apple.iphone-17-pro')),
+      ));
+      expect(
+          [for (final x in both) x['orientation']], ['portrait', 'landscape']);
+      // 500dp fits the landscape phone.
+      expect(both.last['errors'], isEmpty);
+
+      const fold = 'samsung.galaxy-z-fold-7';
+      Future<List<Map<String, Object?>>> foldSweep(String postures,
+              [String orientations = 'natural']) async =>
+          resultsOf(await drive(
+            t,
+            () => deviceLabSweep(
+              c,
+              key,
+              sweepParams(
+                  fold, {'postures': postures, 'orientations': orientations}),
+            ),
+          ));
+
+      final every = await foldSweep('every');
+      expect([for (final x in every) x['posture']],
+          ['folded', 'halfOpened', 'flat']);
+      expect((await foldSweep('all')).map((x) => x['posture']),
+          ['folded', 'flat']);
+      expect((await foldSweep('open')).map((x) => x['posture']), ['flat']);
+
+      final rotated = await foldSweep('every', 'both');
+      expect(rotated.length, greaterThan(every.length));
+      for (final posture in ['folded', 'halfOpened', 'flat']) {
+        final n = rotated.where((x) => x['posture'] == posture).length;
+        expect(n, anyOf(1, 2), reason: posture);
+      }
+    });
+
+    testWidgets('sweep restores the lab and batches with offset/limit',
+        (t) async {
+      final c = await mount(t);
+      final key = currentExtensionTarget!.captureKey;
+      c
+        ..selectDeviceId('samsung.galaxy-z-fold-7')
+        ..setPosture(FoldPosture.folded)
+        ..setOrientation(Orientation.landscape)
+        ..setPreviewing(false);
+
+      final ids = 'apple.iphone-17-pro,apple.iphone-17,apple.ipad-pro-13-m4';
+      final r = await drive(
+        t,
+        () => deviceLabSweep(
+          c,
+          key,
+          sweepParams(
+              ids, {'offset': '1', 'limit': '1', 'orientations': 'natural'}),
+        ),
+      );
+      expect([for (final x in resultsOf(r)) x['id']], ['apple.iphone-17']);
+
+      expect(c.device.id, 'samsung.galaxy-z-fold-7');
+      expect(c.posture, FoldPosture.folded);
+      expect(c.orientation, Orientation.landscape);
+      expect(c.previewing, isFalse);
+
+      // The lock is released afterwards.
+      await drive(
+          t, () => deviceLabSweep(c, key, sweepParams(ids, {'limit': '1'})));
+    });
+
+    testWidgets('a second concurrent sweep is refused', (t) async {
+      final c = await mount(t);
+      final key = currentExtensionTarget!.captureKey;
+      final r = await quietly(() => t.runAsync(() async {
+            final first = deviceLabSweep(
+                c, key, sweepParams('apple.iphone-17-pro', {'settleMs': '30'}));
+            Object? error;
+            try {
+              await deviceLabSweep(c, key, sweepParams('apple.iphone-17'));
+            } on DeviceLabExtensionException catch (e) {
+              error = e;
+            }
+            // Keep frames flowing so the first sweep can finish.
+            var done = false;
+            final finished = first.whenComplete(() => done = true);
+            while (!done) {
+              await Future<void>.delayed(const Duration(milliseconds: 2));
+              await t.pump();
+            }
+            await finished;
+            return error;
+          }));
+      expect(r, isA<DeviceLabExtensionException>());
+      expect(
+          (r! as DeviceLabExtensionException).message, 'sweep already running');
+    });
+
+    testWidgets('sweep screenshots follow the requested mode', (t) async {
+      final c = await mount(t);
+      final key = currentExtensionTarget!.captureKey;
+      const ids = 'apple.iphone-17-pro,apple.ipad-pro-13-m4';
+
+      Future<List<Map<String, Object?>>> run(String mode) async =>
+          resultsOf(await drive(
+            t,
+            () => deviceLabSweep(
+                c,
+                key,
+                sweepParams(ids, {
+                  'orientations': 'natural',
+                  'screenshots': mode,
+                })),
+          ));
+
+      expect((await run('none')).every((x) => !x.containsKey('screenshot')),
+          isTrue);
+      final failures = await run('failures');
+      expect(failures.first['screenshot'], isA<String>());
+      expect(failures.last.containsKey('screenshot'), isFalse);
+      expect(
+          (await run('all')).every((x) => x['screenshot'] is String), isTrue);
+    });
+
+    testWidgets('sweep restores FlutterError.onError', (t) async {
+      final c = await mount(t);
+      final before = FlutterError.onError;
+      await drive(
+        t,
+        () => deviceLabSweep(c, currentExtensionTarget!.captureKey,
+            sweepParams('apple.iphone-17-pro', {'orientations': 'natural'})),
+      );
+      expect(FlutterError.onError, same(before));
+    });
+
+    testWidgets('show applies a device and keeps it', (t) async {
+      final c = await mount(t);
+      final r = await drive(
+        t,
+        () => deviceLabShow(c, {
+          'id': 'samsung.galaxy-z-fold-7',
+          'posture': 'folded',
+          'orientation': 'landscape',
+          'settleMs': '0',
+        }),
+      );
+      expect(r['id'], 'samsung.galaxy-z-fold-7');
+      expect(r['posture'], 'folded');
+      expect(r['orientation'], 'landscape');
+      expect(r.containsKey('screenshot'), isFalse);
+      expect(c.device.id, 'samsung.galaxy-z-fold-7');
+      expect(c.posture, FoldPosture.folded);
+      expect(c.orientation, Orientation.landscape);
+
+      expect(() => deviceLabShow(c, {}),
+          throwsA(isA<DeviceLabExtensionException>()));
+      expect(() => deviceLabShow(c, {'id': 'nope'}),
+          throwsA(isA<DeviceLabExtensionException>()));
+      expect(
+        () =>
+            deviceLabShow(c, {'id': 'apple.iphone-17-pro', 'posture': 'flat'}),
+        throwsA(isA<DeviceLabExtensionException>()),
+      );
+    });
+
+    testWidgets('capture returns the simulated screen as a PNG', (t) async {
+      final c = await mount(t);
+      final key = currentExtensionTarget!.captureKey;
+      final size = c.logicalSize;
+
+      for (final ratio in [0.5, 1.0]) {
+        final r = await t.runAsync(
+          () => deviceLabCapture(key, {'pixelRatio': '$ratio'}, c),
+        );
+        expect(r!['id'], c.device.id);
+        expect(r['size'], [size.width, size.height]);
+        final codec = await t.runAsync(() => ui.instantiateImageCodec(
+              base64Decode(r['screenshot']! as String),
+            ));
+        final image = (await t.runAsync(() => codec!.getNextFrame()))!.image;
+        expect(image.width, closeTo(size.width * ratio, 1));
+        expect(image.height, closeTo(size.height * ratio, 1));
+        image.dispose();
+      }
+
+      expect(() => deviceLabCapture(key, {'pixelRatio': '0'}, c),
+          throwsA(isA<DeviceLabExtensionException>()));
+    });
+
+    testWidgets('capture works while the preview is hidden', (t) async {
+      final c = await mount(t);
+      c.setPreviewing(false);
+      await quietly(() => t.pumpAndSettle());
+      final r = await t.runAsync(
+        () => deviceLabCapture(currentExtensionTarget!.captureKey, {}, c),
+      );
+      expect(r!['screenshot'], isNotEmpty);
     });
   });
 

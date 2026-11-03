@@ -21,7 +21,13 @@
   - The panel is denser (compact chips and a two-line device summary). When the
     panel sits under the stage in a window narrower than 560 dp it is 440 dp
     tall instead of 300 dp, so the list keeps some room.
-- No API changes.
+- Added debug VM service extensions so coding agents and CI can sweep a running
+  app across a device category: `ext.deviceLab.devices`, `ext.deviceLab.sweep`
+  (every device, orientation and posture, collecting layout errors and
+  optional screenshots), `ext.deviceLab.show` and `ext.deviceLab.capture`. The
+  package registers them itself and they do not exist in release builds. See
+  "Automation: service extensions" in the README.
+- No Dart API changes.
 
 ## 0.3.3
 
