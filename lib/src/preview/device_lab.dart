@@ -341,7 +341,7 @@ class _HostShell extends StatelessWidget {
                     height: sidebar
                         ? null
                         : expanded
-                            ? 300
+                            ? (constraints.maxWidth >= 560 ? 300 : 440)
                             : collapsed
                                 ? barHeight
                                 : 0,

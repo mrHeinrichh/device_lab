@@ -1,3 +1,21 @@
+## 0.3.4
+
+- Reworked the tools panel so changing device and then rotating, folding or
+  adjusting a setting needs no scrolling back and forth. The device catalog used
+  to sit at the bottom of one long list, below every setting.
+  - The header no longer scrolls: title and hide button, search, a summary of
+    the current device, Portrait / Landscape, the fold postures (foldables only)
+    and **Show original screen**.
+  - Below it are two tabs. **Devices** holds the catalog; **Display** holds
+    zoom, custom resolution, appearance, accessibility and locale. Typing in the
+    search field switches to Devices, and picking a device leaves you there.
+  - The Devices tab opens with the selected device in view and keeps its scroll
+    position while you change settings on the other tab.
+  - The panel is denser (compact chips and a two-line device summary). When the
+    panel sits under the stage in a window narrower than 560 dp it is 440 dp
+    tall instead of 300 dp, so the list keeps some room.
+- No API changes.
+
 ## 0.3.3
 
 - Fixed the app being laid out in whatever space was left in the window instead

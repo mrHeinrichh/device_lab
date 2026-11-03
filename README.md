@@ -161,6 +161,14 @@ behave as they do without it, and dialogs open inside the device screen. The
 app is laid out at the exact simulated size and then scaled to fit, so a
 device larger than the window does not change its layout.
 
+## The tools panel
+
+The top of the panel stays put: the current device, Portrait / Landscape, the
+fold postures of a foldable and **Show original screen**. Below it, the
+**Devices** tab lists the catalog (search filters it) and the **Display** tab
+holds zoom, custom resolution, appearance, accessibility and locale. Switching
+devices and then rotating or folding the new one needs no scrolling.
+
 ## Rotating and zooming
 
 Rotate turns the whole device, not just the screen. The camera cutout, side

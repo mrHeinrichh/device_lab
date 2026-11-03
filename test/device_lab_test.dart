@@ -1263,6 +1263,8 @@ void main() {
       final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
       await t.pumpWidget(harness(c));
       await t.pumpAndSettle();
+      await t.tap(find.text('Display'));
+      await t.pumpAndSettle();
       expect(text(t, 1), '402');
       expect(text(t, 2), '874');
 
@@ -1285,6 +1287,8 @@ void main() {
 
       final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
       await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Display'));
       await t.pumpAndSettle();
 
       await t.enterText(find.byType(TextField).at(1), '500');
@@ -1525,6 +1529,199 @@ void main() {
       expect(find.text('alive'), findsOneWidget);
       expect(find.text('open'), findsOneWidget);
     });
+  });
+
+  group('tools panel', () {
+    Widget harness(DeviceLabController c) => DeviceLab(
+          controller: c,
+          builder: (_) => MaterialApp(
+            builder: DeviceLab.appBuilder,
+            home: const SizedBox(),
+          ),
+        );
+
+    void windowSize(WidgetTester t, Size size) {
+      t.view.physicalSize = size;
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+    }
+
+    // A device's row in the Devices list; the header shows the name as well.
+    Finder tile(String name) => find.descendant(
+          of: find.byType(ListTile),
+          matching: find.text(name),
+        );
+
+    // The last entry of the catalog is as far down the Devices list as it gets.
+    DeviceSpec farthest() => DeviceCatalog.all.lastWhere(
+          (d) => d.category == DeviceCategory.tablet,
+        );
+
+    for (final entry in {
+      'stacked panel': const Size(800, 600),
+      'narrow stacked panel': const Size(390, 844),
+      'sidebar': const Size(1194, 834),
+    }.entries) {
+      testWidgets(
+          'after picking a device far down the list, rotating and leaving '
+          'the preview need no scrolling (${entry.key})', (t) async {
+        windowSize(t, entry.value);
+        final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+        await t.pumpWidget(harness(c));
+        await t.pumpAndSettle();
+
+        final target = farthest();
+        await t.ensureVisible(tile(target.name));
+        await t.tap(tile(target.name));
+        await t.pumpAndSettle();
+        expect(c.device.id, target.id);
+
+        // The device list may be scrolled anywhere; the header is not.
+        await t.tap(find.text('Landscape'));
+        await t.pumpAndSettle();
+        expect(c.orientation, Orientation.landscape);
+
+        await t.tap(find.text('Portrait'));
+        await t.pumpAndSettle();
+        expect(c.orientation, Orientation.portrait);
+
+        await t.tap(find.text('Show original screen'));
+        await t.pumpAndSettle();
+        expect(c.previewing, isFalse);
+        expect(t.takeException(), isNull);
+      });
+    }
+
+    testWidgets('the selected device is scrolled into view when it opens',
+        (t) async {
+      final target = farthest();
+      final c = DeviceLabController(initialDeviceId: target.id);
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+
+      final panel = t.getRect(find.byType(ToolsPanel));
+      final row = t.getRect(tile(target.name));
+      expect(panel.overlaps(row), isTrue);
+      expect(row.bottom, lessThanOrEqualTo(panel.bottom));
+    });
+
+    testWidgets('the list does not jump back when a setting changes',
+        (t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+
+      await t.drag(tile('iPhone 17 Pro'), const Offset(0, -120));
+      await t.pumpAndSettle();
+      final before = t.getTopLeft(tile('iPhone 17 Pro')).dy;
+
+      await t.tap(find.text('Landscape'));
+      await t.pumpAndSettle();
+      expect(t.getTopLeft(tile('iPhone 17 Pro')).dy, before);
+    });
+
+    testWidgets('posture chips are in the header for a foldable only',
+        (t) async {
+      windowSize(t, const Size(1194, 834));
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      expect(find.text('Cover'), findsNothing);
+      expect(find.text('Half-open'), findsNothing);
+
+      await t.ensureVisible(tile('Galaxy Z Fold 7'));
+      await t.tap(tile('Galaxy Z Fold 7'));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Half-open'));
+      await t.pumpAndSettle();
+      expect(c.posture, FoldPosture.halfOpened);
+      await t.tap(find.text('Cover'));
+      await t.pumpAndSettle();
+      expect(c.posture, FoldPosture.folded);
+      await t.tap(find.text('Unfolded'));
+      await t.pumpAndSettle();
+      expect(c.posture, FoldPosture.flat);
+
+      await t.ensureVisible(tile('iPhone 17 Pro'));
+      await t.tap(tile('iPhone 17 Pro'));
+      await t.pumpAndSettle();
+      expect(find.text('Cover'), findsNothing);
+    });
+
+    testWidgets('searching switches to the Devices tab and filters it',
+        (t) async {
+      windowSize(t, const Size(1194, 834));
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Display'));
+      await t.pumpAndSettle();
+      expect(find.text('Dark mode'), findsOneWidget);
+
+      await t.enterText(find.byType(TextField).first, 'iPad');
+      await t.pumpAndSettle();
+
+      expect(find.text('Dark mode'), findsNothing);
+      expect(find.text('PHONES'), findsNothing);
+      expect(find.text('TABLETS'), findsOneWidget);
+      expect(find.text('iPad Pro 13" (M4)'), findsOneWidget);
+
+      await t.enterText(find.byType(TextField).first, 'zzzzzz');
+      await t.pumpAndSettle();
+      expect(find.text('No matching devices'), findsOneWidget);
+    });
+
+    testWidgets('the Display tab keeps zoom, appearance and accessibility',
+        (t) async {
+      windowSize(t, const Size(1194, 834));
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      expect(find.text('Dark mode'), findsNothing);
+
+      await t.tap(find.text('Display'));
+      await t.pumpAndSettle();
+
+      expect(find.text('Zoom'.toUpperCase()), findsOneWidget);
+      expect(find.byType(Slider), findsWidgets);
+      await t.tap(find.text('Dark mode'));
+      await t.pumpAndSettle();
+      expect(c.brightness, Brightness.dark);
+
+      await t.drag(find.byType(ListView), const Offset(0, -300));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Bold text'));
+      await t.pumpAndSettle();
+      expect(c.boldText, isTrue);
+
+      // Back on Devices, the selected device is still the one in the header.
+      await t.tap(find.text('Devices'));
+      await t.pumpAndSettle();
+      expect(find.text('Dark mode'), findsNothing);
+      expect(find.text('PHONES'), findsOneWidget);
+    });
+
+    for (final entry in {
+      'stacked panel': const Size(800, 600),
+      'narrow stacked panel': const Size(390, 844),
+      'sidebar': const Size(1194, 834),
+    }.entries) {
+      testWidgets('does not overflow in the ${entry.key}', (t) async {
+        windowSize(t, entry.value);
+        for (final id in ['apple.iphone-17-pro', 'samsung.galaxy-z-fold-7']) {
+          final c = DeviceLabController(initialDeviceId: id);
+          await t.pumpWidget(harness(c));
+          await t.pumpAndSettle();
+          expect(t.takeException(), isNull, reason: id);
+
+          await t.tap(find.text('Display'));
+          await t.pumpAndSettle();
+          expect(t.takeException(), isNull, reason: '$id display');
+        }
+      });
+    }
   });
 
   group('golden helpers', () {
