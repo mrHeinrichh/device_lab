@@ -2,6 +2,14 @@
 
 Preview a Flutter app on any device without booting a simulator.
 
+> **This fork** ([AnasQasem/device_lab](https://github.com/AnasQasem/device_lab)) adds, on top of
+> upstream `master`: a tools panel with pinned quick controls, Devices / Display tabs and category chips;
+> debug VM service extensions (`ext.deviceLab.*`) that sweep a running app across every device of a
+> category; a [device preview guide](doc/guide.md) including the `flutter_pixil_framework` wiring; and an
+> agent skill ([`skills/device-lab`](skills/device-lab/SKILL.md)). Install the skill in Claude Code with
+> `claude plugin marketplace add https://github.com/AnasQasem/device_lab.git` and
+> `claude plugin install device-lab@device-lab`.
+
 `device_lab` wraps your app, overrides `MediaQuery`, and renders it inside a
 device frame with a tools panel for size, orientation, fold posture, locale,
 text scale and accessibility flags.

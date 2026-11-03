@@ -1,0 +1,14 @@
+{
+  "name": "device-lab",
+  "description": "device_lab agent skill: device preview and full-category responsiveness sweeps for Flutter apps.",
+  "owner": {
+    "name": "Anas Qasem"
+  },
+  "plugins": [
+    {
+      "name": "device-lab",
+      "source": "./",
+      "description": "Preview a Flutter app as any device and sweep every tablet, phone or foldable for layout errors."
+    }
+  ]
+}
