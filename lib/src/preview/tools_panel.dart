@@ -5,9 +5,45 @@ import '../model/device_spec.dart';
 import 'device_lab_controller.dart';
 import 'zoom_controls.dart';
 
+/// At or below this height the panel is a short strip under the preview, and
+/// the two filter rows share one line so the list keeps room.
+const double _shortPanel = 480;
+
 /// Below this width the header stacks its rows; at or above it the title and
 /// search share a row. The 320 dp sidebar and a phone-sized window are narrow.
 const double _wideHeader = 560;
+
+String _categoryTitle(DeviceCategory category) => switch (category) {
+      DeviceCategory.phone => 'Phones',
+      DeviceCategory.foldable => 'Foldables',
+      DeviceCategory.tablet => 'Tablets',
+      DeviceCategory.desktop => 'Desktop & breakpoints',
+      DeviceCategory.watch => 'Watches',
+      DeviceCategory.tv => 'TV',
+    };
+
+/// The sub-category of [d] within its category, derived from fields the
+/// catalog already carries: the operating system, and for foldables the
+/// direction of the hinge.
+String _subCategoryOf(DeviceSpec d) {
+  final ios = d.platform == DevicePlatform.ios;
+  return switch (d.category) {
+    DeviceCategory.phone => ios ? 'iPhone' : 'Android',
+    DeviceCategory.tablet => ios ? 'iPad' : 'Android tablet',
+    DeviceCategory.foldable =>
+      d.screens.any((s) => s.hinge?.axis == Axis.horizontal) ? 'Flip' : 'Book',
+    DeviceCategory.desktop => switch (d.platform) {
+        DevicePlatform.macos => 'Mac',
+        DevicePlatform.windows ||
+        DevicePlatform.linux ||
+        DevicePlatform.fuchsia =>
+          'Windows & Linux',
+        _ => 'Web & breakpoints',
+      },
+    DeviceCategory.watch => ios ? 'Apple Watch' : 'Wear OS',
+    DeviceCategory.tv => 'TV',
+  };
+}
 
 class ToolsPanel extends StatefulWidget {
   const ToolsPanel({
@@ -87,7 +123,11 @@ class _ToolsPanelState extends State<ToolsPanel>
                   builder: (context, _) => IndexedStack(
                     index: _tabs.index,
                     children: [
-                      _DeviceList(controller: c, query: _query),
+                      _DevicesTab(
+                        controller: c,
+                        query: _query,
+                        compact: constraints.maxHeight <= _shortPanel,
+                      ),
                       _DisplayTab(
                         controller: c,
                         availableLocales: widget.availableLocales,
@@ -215,14 +255,166 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// The device catalog, grouped by category and filtered by [query]. Reveals the
-/// selected device when it first appears and when the selection changes from
-/// elsewhere, so the list never opens scrolled away from what is selected.
-class _DeviceList extends StatefulWidget {
-  const _DeviceList({required this.controller, required this.query});
+/// The Devices tab: category and sub-category chips pinned above the catalog
+/// list. The selection lives here, so it survives picking a device and
+/// switching tabs.
+class _DevicesTab extends StatefulWidget {
+  const _DevicesTab({
+    required this.controller,
+    required this.query,
+    required this.compact,
+  });
 
   final DeviceLabController controller;
   final String query;
+
+  /// Put the sub-category chips on the category row instead of below it.
+  final bool compact;
+
+  @override
+  State<_DevicesTab> createState() => _DevicesTabState();
+}
+
+class _DevicesTabState extends State<_DevicesTab> {
+  final GlobalKey _subsKey = GlobalKey();
+  DeviceCategory? _category;
+  String? _sub;
+
+  void _selectCategory(DeviceCategory? category) {
+    setState(() {
+      _category = category;
+      _sub = null;
+    });
+    if (!widget.compact) return;
+    // On a shared row the sub-categories sit after the categories, which may
+    // be scrolled out of sight on a narrow panel.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _subsKey.currentContext;
+      if (!mounted || context == null) return;
+      Scrollable.ensureVisible(
+        context,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      );
+    });
+  }
+
+  Widget _group(Key key, List<Widget> chips) => Row(
+        key: key,
+        children: [
+          for (final chip in chips)
+            Padding(padding: const EdgeInsets.only(right: 8), child: chip),
+        ],
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final all = DeviceCatalog.all;
+    final categories = [
+      for (final category in DeviceCategory.values)
+        if (all.any((d) => d.category == category)) category,
+    ];
+    final category = categories.contains(_category) ? _category : null;
+    final subs = <String>[];
+    if (category != null) {
+      for (final d in all) {
+        if (d.category != category) continue;
+        final sub = _subCategoryOf(d);
+        if (!subs.contains(sub)) subs.add(sub);
+      }
+    }
+    final sub = subs.contains(_sub) ? _sub : null;
+
+    final categoryChips = _group(const ValueKey('category-chips'), [
+      _Chip(
+        label: 'All',
+        selected: category == null,
+        onTap: () => _selectCategory(null),
+      ),
+      for (final c in categories)
+        _Chip(
+          label: _categoryTitle(c),
+          selected: category == c,
+          onTap: () => _selectCategory(c),
+        ),
+    ]);
+    final subChips = subs.length > 1
+        ? KeyedSubtree(
+            key: _subsKey,
+            child: _group(const ValueKey('sub-category-chips'), [
+              _Chip(
+                label: 'All',
+                selected: sub == null,
+                onTap: () => setState(() => _sub = null),
+              ),
+              for (final s in subs)
+                _Chip(
+                  label: s,
+                  selected: sub == s,
+                  onTap: () => setState(() => _sub = s),
+                ),
+            ]),
+          )
+        : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.compact)
+          _ChipRow(
+            children: [
+              categoryChips,
+              if (subChips != null) ...[
+                const SizedBox(height: 20, child: VerticalDivider(width: 17)),
+                subChips,
+              ],
+            ],
+          )
+        else ...[
+          _ChipRow(children: [categoryChips]),
+          if (subChips != null) _ChipRow(children: [subChips]),
+        ],
+        Expanded(
+          child: _DeviceList(
+            controller: widget.controller,
+            query: widget.query,
+            category: category,
+            subCategory: sub,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One horizontally scrolling row of chips.
+class _ChipRow extends StatelessWidget {
+  const _ChipRow({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+        child: Row(children: children),
+      );
+}
+
+/// The device catalog, grouped by category and filtered by [query],
+/// [category] and [subCategory]. Reveals the selected device when it first
+/// appears and when the selection changes from elsewhere, so the list never
+/// opens scrolled away from what is selected.
+class _DeviceList extends StatefulWidget {
+  const _DeviceList({
+    required this.controller,
+    required this.query,
+    required this.category,
+    required this.subCategory,
+  });
+
+  final DeviceLabController controller;
+  final String query;
+  final DeviceCategory? category;
+  final String? subCategory;
 
   @override
   State<_DeviceList> createState() => _DeviceListState();
@@ -274,6 +466,11 @@ class _DeviceListState extends State<_DeviceList> {
 
     final grouped = <DeviceCategory, List<DeviceSpec>>{};
     for (final d in DeviceCatalog.search(widget.query)) {
+      if (widget.category != null && d.category != widget.category) continue;
+      if (widget.subCategory != null &&
+          _subCategoryOf(d) != widget.subCategory) {
+        continue;
+      }
       grouped.putIfAbsent(d.category, () => []).add(d);
     }
     // A plain column rather than a lazy list: the selected tile has to exist
@@ -284,20 +481,23 @@ class _DeviceListState extends State<_DeviceList> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (grouped.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 16),
-              child: Text('No matching devices', textAlign: TextAlign.center),
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Text(
+                [
+                  'No matching devices',
+                  if (widget.category != null)
+                    'in ${[
+                      _categoryTitle(widget.category!),
+                      if (widget.subCategory != null) widget.subCategory!,
+                    ].join(' · ')}',
+                ].join(' '),
+                textAlign: TextAlign.center,
+              ),
             ),
           for (final entry in grouped.entries)
             _Section(
-              title: switch (entry.key) {
-                DeviceCategory.phone => 'Phones',
-                DeviceCategory.foldable => 'Foldables',
-                DeviceCategory.tablet => 'Tablets',
-                DeviceCategory.desktop => 'Desktop & breakpoints',
-                DeviceCategory.watch => 'Watches',
-                DeviceCategory.tv => 'TV',
-              },
+              title: widget.category == null ? _categoryTitle(entry.key) : null,
               child: Column(
                 children: [
                   for (final d in entry.value)
@@ -628,9 +828,10 @@ class _DeviceTile extends StatelessWidget {
 }
 
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
+  const _Section({this.title, required this.child});
 
-  final String title;
+  /// Omitted when the list is already narrowed to one category.
+  final String? title;
   final Widget child;
 
   @override
@@ -639,16 +840,18 @@ class _Section extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title.toUpperCase(),
-              style: const TextStyle(
-                fontSize: 11,
-                letterSpacing: 0.8,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF9E9E9E),
+            if (title != null) ...[
+              Text(
+                title!.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 0.8,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF9E9E9E),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
+              const SizedBox(height: 6),
+            ],
             child,
           ],
         ),

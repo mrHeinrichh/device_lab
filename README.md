@@ -165,7 +165,8 @@ device larger than the window does not change its layout.
 
 The top of the panel stays put: the current device, Portrait / Landscape, the
 fold postures of a foldable and **Show original screen**. Below it, the
-**Devices** tab lists the catalog (search filters it) and the **Display** tab
+**Devices** tab lists the catalog (search and the category chips, such as
+Tablets then iPad or Android tablet, filter it) and the **Display** tab
 holds zoom, custom resolution, appearance, accessibility and locale. Switching
 devices and then rotating or folding the new one needs no scrolling.
 

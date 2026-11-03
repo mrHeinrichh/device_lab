@@ -9,6 +9,13 @@
   - Below it are two tabs. **Devices** holds the catalog; **Display** holds
     zoom, custom resolution, appearance, accessibility and locale. Typing in the
     search field switches to Devices, and picking a device leaves you there.
+  - The Devices tab has category chips (Phones, Foldables, Tablets, ...) and,
+    for a category with more than one kind of device, sub-category chips:
+    iPhone / Android, iPad / Android tablet, Book / Flip, Mac / Windows &
+    Linux / Web & breakpoints, Apple Watch / Wear OS. They are derived from each
+    device's platform and hinge direction, so custom devices are sorted too.
+    The chips stay pinned above the list, combine with the search field, and
+    share one row in the 300 dp stacked panel.
   - The Devices tab opens with the selected device in view and keeps its scroll
     position while you change settings on the other tab.
   - The panel is denser (compact chips and a two-line device summary). When the
