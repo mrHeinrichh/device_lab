@@ -1,8 +1,12 @@
+import 'dart:convert';
+import 'dart:ui' as ui;
+
 import 'package:device_lab/device_lab.dart';
 import 'package:device_lab/device_lab_testing.dart';
 import 'package:device_lab/src/model/quarter_turn.dart';
 import 'package:device_lab/src/preview/device_body.dart';
 import 'package:device_lab/src/preview/device_stage.dart';
+import 'package:device_lab/src/preview/service_extensions.dart';
 import 'package:device_lab/src/preview/tools_panel.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -656,6 +660,343 @@ void main() {
     });
   });
 
+  group('service extensions', () {
+    const wideRow = 500.0;
+
+    // The sweep chains the previous handler, and the test binding's handler
+    // would fail the test on the overflows we provoke on purpose. Only swap it
+    // while the lab runs, so a failing expect() still reports normally.
+    Future<T> quietly<T>(Future<T> Function() body) async {
+      final saved = FlutterError.onError;
+      FlutterError.onError = (_) {};
+      try {
+        return await body();
+      } finally {
+        FlutterError.onError = saved;
+      }
+    }
+
+    Future<DeviceLabController> mount(WidgetTester t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await quietly(() async {
+        await t.pumpWidget(
+          DeviceLab(
+            controller: c,
+            builder: (_) => MaterialApp(
+              builder: DeviceLab.appBuilder,
+              home: const Scaffold(
+                body: Row(children: [SizedBox(width: wideRow, height: 20)]),
+              ),
+            ),
+          ),
+        );
+        await t.pumpAndSettle();
+      });
+      return c;
+    }
+
+    // Runs [fn] on the real clock while pumping frames, because the handlers
+    // wait on real timers and on the next frame.
+    Future<T> drive<T>(WidgetTester t, Future<T> Function() fn) async {
+      final result = await quietly(() async {
+        return t.runAsync(() async {
+          var done = false;
+          final future = fn().whenComplete(() => done = true);
+          while (!done) {
+            await Future<void>.delayed(const Duration(milliseconds: 2));
+            await t.pump();
+          }
+          return future;
+        });
+      });
+      return result as T;
+    }
+
+    List<Map<String, Object?>> resultsOf(Map<String, Object?> r) =>
+        (r['results']! as List).cast<Map<String, Object?>>();
+
+    Map<String, String> sweepParams(String ids, [Map<String, String>? more]) =>
+        {'ids': ids, 'settleMs': '0', ...?more};
+
+    test('devices filters by category, platform and ids', () {
+      List<Map<String, Object?>> list(Map<String, String> p) =>
+          (deviceLabDevices(p)['devices']! as List).cast();
+
+      final tablets = DeviceCatalog.all
+          .where((d) => d.category == DeviceCategory.tablet)
+          .map((d) => d.id)
+          .toList();
+      final result = deviceLabDevices({'category': 'tablet'});
+      expect(result['count'], tablets.length);
+      expect([
+        for (final d in list({'category': 'tablet'})) d['id']
+      ], tablets);
+
+      final iosTablets = list({'category': 'tablet', 'platform': 'iOS'});
+      expect(iosTablets, isNotEmpty);
+      expect(iosTablets.length, lessThan(tablets.length));
+      expect(iosTablets.every((d) => d['platform'] == 'iOS'), isTrue);
+
+      final byIds = list({
+        'ids': 'apple.iphone-17-pro, samsung.galaxy-z-fold-7',
+        'category': 'tablet',
+      });
+      expect([for (final d in byIds) d['id']],
+          ['apple.iphone-17-pro', 'samsung.galaxy-z-fold-7']);
+      expect(byIds.last['foldable'], isTrue);
+      expect(byIds.first['foldable'], isFalse);
+      expect(byIds.first['rotatable'], isTrue);
+      expect(byIds.first['size'], hasLength(2));
+
+      expect(
+        () => deviceLabDevices({'category': 'toaster'}),
+        throwsA(isA<DeviceLabExtensionException>()
+            .having((e) => e.invalidParams, 'invalidParams', isTrue)),
+      );
+      expect(() => deviceLabDevices({'platform': 'amiga'}),
+          throwsA(isA<DeviceLabExtensionException>()));
+      expect(() => deviceLabDevices({'ids': 'nope'}),
+          throwsA(isA<DeviceLabExtensionException>()));
+    });
+
+    testWidgets('the mounted lab is the extensions target', (t) async {
+      final c = await mount(t);
+      expect(currentExtensionTarget?.controller, same(c));
+      await quietly(() => t.pumpWidget(const SizedBox()));
+      expect(currentExtensionTarget, isNull);
+    });
+
+    testWidgets('sweep reports overflows on phones but not tablets', (t) async {
+      final c = await mount(t);
+      final r = await drive(
+        t,
+        () => deviceLabSweep(
+          c,
+          currentExtensionTarget!.captureKey,
+          sweepParams('apple.iphone-17-pro,apple.ipad-pro-13-m4',
+              {'orientations': 'natural'}),
+        ),
+      );
+      final cases = resultsOf(r);
+      expect(cases, hasLength(2));
+      expect(r['count'], 2);
+      expect(r['failed'], 1);
+
+      final phone = cases.first;
+      expect(phone['id'], 'apple.iphone-17-pro');
+      expect(phone['orientation'], 'portrait');
+      expect(phone['posture'], isNull);
+      final errors = (phone['errors']! as List).cast<String>();
+      expect(errors, hasLength(1));
+      expect(errors.single, contains('RenderFlex overflowed'));
+      expect(errors.single, contains('device_lab_test.dart'));
+      expect(errors.single, isNot(startsWith('[device_lab]')));
+
+      expect(cases.last['errors'], isEmpty);
+    });
+
+    testWidgets('sweep expands orientations and postures', (t) async {
+      final c = await mount(t);
+      final key = currentExtensionTarget!.captureKey;
+
+      final both = resultsOf(await drive(
+        t,
+        () => deviceLabSweep(c, key, sweepParams('apple.iphone-17-pro')),
+      ));
+      expect(
+          [for (final x in both) x['orientation']], ['portrait', 'landscape']);
+      // 500dp fits the landscape phone.
+      expect(both.last['errors'], isEmpty);
+
+      const fold = 'samsung.galaxy-z-fold-7';
+      Future<List<Map<String, Object?>>> foldSweep(String postures,
+              [String orientations = 'natural']) async =>
+          resultsOf(await drive(
+            t,
+            () => deviceLabSweep(
+              c,
+              key,
+              sweepParams(
+                  fold, {'postures': postures, 'orientations': orientations}),
+            ),
+          ));
+
+      final every = await foldSweep('every');
+      expect([for (final x in every) x['posture']],
+          ['folded', 'halfOpened', 'flat']);
+      expect((await foldSweep('all')).map((x) => x['posture']),
+          ['folded', 'flat']);
+      expect((await foldSweep('open')).map((x) => x['posture']), ['flat']);
+
+      final rotated = await foldSweep('every', 'both');
+      expect(rotated.length, greaterThan(every.length));
+      for (final posture in ['folded', 'halfOpened', 'flat']) {
+        final n = rotated.where((x) => x['posture'] == posture).length;
+        expect(n, anyOf(1, 2), reason: posture);
+      }
+    });
+
+    testWidgets('sweep restores the lab and batches with offset/limit',
+        (t) async {
+      final c = await mount(t);
+      final key = currentExtensionTarget!.captureKey;
+      c
+        ..selectDeviceId('samsung.galaxy-z-fold-7')
+        ..setPosture(FoldPosture.folded)
+        ..setOrientation(Orientation.landscape)
+        ..setPreviewing(false);
+
+      final ids = 'apple.iphone-17-pro,apple.iphone-17,apple.ipad-pro-13-m4';
+      final r = await drive(
+        t,
+        () => deviceLabSweep(
+          c,
+          key,
+          sweepParams(
+              ids, {'offset': '1', 'limit': '1', 'orientations': 'natural'}),
+        ),
+      );
+      expect([for (final x in resultsOf(r)) x['id']], ['apple.iphone-17']);
+
+      expect(c.device.id, 'samsung.galaxy-z-fold-7');
+      expect(c.posture, FoldPosture.folded);
+      expect(c.orientation, Orientation.landscape);
+      expect(c.previewing, isFalse);
+
+      // The lock is released afterwards.
+      await drive(
+          t, () => deviceLabSweep(c, key, sweepParams(ids, {'limit': '1'})));
+    });
+
+    testWidgets('a second concurrent sweep is refused', (t) async {
+      final c = await mount(t);
+      final key = currentExtensionTarget!.captureKey;
+      final r = await quietly(() => t.runAsync(() async {
+            final first = deviceLabSweep(
+                c, key, sweepParams('apple.iphone-17-pro', {'settleMs': '30'}));
+            Object? error;
+            try {
+              await deviceLabSweep(c, key, sweepParams('apple.iphone-17'));
+            } on DeviceLabExtensionException catch (e) {
+              error = e;
+            }
+            // Keep frames flowing so the first sweep can finish.
+            var done = false;
+            final finished = first.whenComplete(() => done = true);
+            while (!done) {
+              await Future<void>.delayed(const Duration(milliseconds: 2));
+              await t.pump();
+            }
+            await finished;
+            return error;
+          }));
+      expect(r, isA<DeviceLabExtensionException>());
+      expect(
+          (r! as DeviceLabExtensionException).message, 'sweep already running');
+    });
+
+    testWidgets('sweep screenshots follow the requested mode', (t) async {
+      final c = await mount(t);
+      final key = currentExtensionTarget!.captureKey;
+      const ids = 'apple.iphone-17-pro,apple.ipad-pro-13-m4';
+
+      Future<List<Map<String, Object?>>> run(String mode) async =>
+          resultsOf(await drive(
+            t,
+            () => deviceLabSweep(
+                c,
+                key,
+                sweepParams(ids, {
+                  'orientations': 'natural',
+                  'screenshots': mode,
+                })),
+          ));
+
+      expect((await run('none')).every((x) => !x.containsKey('screenshot')),
+          isTrue);
+      final failures = await run('failures');
+      expect(failures.first['screenshot'], isA<String>());
+      expect(failures.last.containsKey('screenshot'), isFalse);
+      expect(
+          (await run('all')).every((x) => x['screenshot'] is String), isTrue);
+    });
+
+    testWidgets('sweep restores FlutterError.onError', (t) async {
+      final c = await mount(t);
+      final before = FlutterError.onError;
+      await drive(
+        t,
+        () => deviceLabSweep(c, currentExtensionTarget!.captureKey,
+            sweepParams('apple.iphone-17-pro', {'orientations': 'natural'})),
+      );
+      expect(FlutterError.onError, same(before));
+    });
+
+    testWidgets('show applies a device and keeps it', (t) async {
+      final c = await mount(t);
+      final r = await drive(
+        t,
+        () => deviceLabShow(c, {
+          'id': 'samsung.galaxy-z-fold-7',
+          'posture': 'folded',
+          'orientation': 'landscape',
+          'settleMs': '0',
+        }),
+      );
+      expect(r['id'], 'samsung.galaxy-z-fold-7');
+      expect(r['posture'], 'folded');
+      expect(r['orientation'], 'landscape');
+      expect(r.containsKey('screenshot'), isFalse);
+      expect(c.device.id, 'samsung.galaxy-z-fold-7');
+      expect(c.posture, FoldPosture.folded);
+      expect(c.orientation, Orientation.landscape);
+
+      expect(() => deviceLabShow(c, {}),
+          throwsA(isA<DeviceLabExtensionException>()));
+      expect(() => deviceLabShow(c, {'id': 'nope'}),
+          throwsA(isA<DeviceLabExtensionException>()));
+      expect(
+        () =>
+            deviceLabShow(c, {'id': 'apple.iphone-17-pro', 'posture': 'flat'}),
+        throwsA(isA<DeviceLabExtensionException>()),
+      );
+    });
+
+    testWidgets('capture returns the simulated screen as a PNG', (t) async {
+      final c = await mount(t);
+      final key = currentExtensionTarget!.captureKey;
+      final size = c.logicalSize;
+
+      for (final ratio in [0.5, 1.0]) {
+        final r = await t.runAsync(
+          () => deviceLabCapture(key, {'pixelRatio': '$ratio'}, c),
+        );
+        expect(r!['id'], c.device.id);
+        expect(r['size'], [size.width, size.height]);
+        final codec = await t.runAsync(() => ui.instantiateImageCodec(
+              base64Decode(r['screenshot']! as String),
+            ));
+        final image = (await t.runAsync(() => codec!.getNextFrame()))!.image;
+        expect(image.width, closeTo(size.width * ratio, 1));
+        expect(image.height, closeTo(size.height * ratio, 1));
+        image.dispose();
+      }
+
+      expect(() => deviceLabCapture(key, {'pixelRatio': '0'}, c),
+          throwsA(isA<DeviceLabExtensionException>()));
+    });
+
+    testWidgets('capture works while the preview is hidden', (t) async {
+      final c = await mount(t);
+      c.setPreviewing(false);
+      await quietly(() => t.pumpAndSettle());
+      final r = await t.runAsync(
+        () => deviceLabCapture(currentExtensionTarget!.captureKey, {}, c),
+      );
+      expect(r!['screenshot'], isNotEmpty);
+    });
+  });
+
   group('collapsed details', () {
     testWidgets('collapsing keeps the device and resolution visible',
         (t) async {
@@ -1263,6 +1604,8 @@ void main() {
       final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
       await t.pumpWidget(harness(c));
       await t.pumpAndSettle();
+      await t.tap(find.text('Display'));
+      await t.pumpAndSettle();
       expect(text(t, 1), '402');
       expect(text(t, 2), '874');
 
@@ -1285,6 +1628,8 @@ void main() {
 
       final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
       await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Display'));
       await t.pumpAndSettle();
 
       await t.enterText(find.byType(TextField).at(1), '500');
@@ -1525,6 +1870,543 @@ void main() {
       expect(find.text('alive'), findsOneWidget);
       expect(find.text('open'), findsOneWidget);
     });
+  });
+
+  group('tools panel', () {
+    Widget harness(DeviceLabController c) => DeviceLab(
+          controller: c,
+          builder: (_) => MaterialApp(
+            builder: DeviceLab.appBuilder,
+            home: const SizedBox(),
+          ),
+        );
+
+    void windowSize(WidgetTester t, Size size) {
+      t.view.physicalSize = size;
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+    }
+
+    // A device's row in the Devices list; the header shows the name as well.
+    Finder tile(String name) => find.descendant(
+          of: find.byType(ListTile),
+          matching: find.text(name),
+        );
+
+    // The last entry of the catalog is as far down the Devices list as it gets.
+    DeviceSpec farthest() => DeviceCatalog.all.lastWhere(
+          (d) => d.category == DeviceCategory.tablet,
+        );
+
+    for (final entry in {
+      'stacked panel': const Size(800, 600),
+      'narrow stacked panel': const Size(390, 844),
+      'sidebar': const Size(1194, 834),
+    }.entries) {
+      testWidgets(
+          'after picking a device far down the list, rotating and leaving '
+          'the preview need no scrolling (${entry.key})', (t) async {
+        windowSize(t, entry.value);
+        final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+        await t.pumpWidget(harness(c));
+        await t.pumpAndSettle();
+
+        final target = farthest();
+        await t.ensureVisible(tile(target.name));
+        await t.tap(tile(target.name));
+        await t.pumpAndSettle();
+        expect(c.device.id, target.id);
+
+        // The device list may be scrolled anywhere; the header is not.
+        await t.tap(find.text('Landscape'));
+        await t.pumpAndSettle();
+        expect(c.orientation, Orientation.landscape);
+
+        await t.tap(find.text('Portrait'));
+        await t.pumpAndSettle();
+        expect(c.orientation, Orientation.portrait);
+
+        await t.tap(find.text('Show original screen'));
+        await t.pumpAndSettle();
+        expect(c.previewing, isFalse);
+        expect(t.takeException(), isNull);
+      });
+    }
+
+    testWidgets('the selected device is scrolled into view when it opens',
+        (t) async {
+      final target = farthest();
+      final c = DeviceLabController(initialDeviceId: target.id);
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+
+      final panel = t.getRect(find.byType(ToolsPanel));
+      final row = t.getRect(tile(target.name));
+      expect(panel.overlaps(row), isTrue);
+      expect(row.bottom, lessThanOrEqualTo(panel.bottom));
+    });
+
+    testWidgets('the list does not jump back when a setting changes',
+        (t) async {
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+
+      await t.drag(tile('iPhone 17 Pro'), const Offset(0, -120));
+      await t.pumpAndSettle();
+      final before = t.getTopLeft(tile('iPhone 17 Pro')).dy;
+
+      await t.tap(find.text('Landscape'));
+      await t.pumpAndSettle();
+      expect(t.getTopLeft(tile('iPhone 17 Pro')).dy, before);
+    });
+
+    testWidgets('posture chips are in the header for a foldable only',
+        (t) async {
+      windowSize(t, const Size(1194, 834));
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      expect(find.text('Cover'), findsNothing);
+      expect(find.text('Half-open'), findsNothing);
+
+      await t.ensureVisible(tile('Galaxy Z Fold 7'));
+      await t.tap(tile('Galaxy Z Fold 7'));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Half-open'));
+      await t.pumpAndSettle();
+      expect(c.posture, FoldPosture.halfOpened);
+      await t.tap(find.text('Cover'));
+      await t.pumpAndSettle();
+      expect(c.posture, FoldPosture.folded);
+      await t.tap(find.text('Unfolded'));
+      await t.pumpAndSettle();
+      expect(c.posture, FoldPosture.flat);
+
+      await t.ensureVisible(tile('iPhone 17 Pro'));
+      await t.tap(tile('iPhone 17 Pro'));
+      await t.pumpAndSettle();
+      expect(find.text('Cover'), findsNothing);
+    });
+
+    testWidgets('searching switches to the Devices tab and filters it',
+        (t) async {
+      windowSize(t, const Size(1194, 834));
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Display'));
+      await t.pumpAndSettle();
+      expect(find.text('Dark mode'), findsOneWidget);
+
+      await t.enterText(find.byType(TextField).first, 'iPad');
+      await t.pumpAndSettle();
+
+      expect(find.text('Dark mode'), findsNothing);
+      expect(find.text('PHONES'), findsNothing);
+      expect(find.text('TABLETS'), findsOneWidget);
+      expect(find.text('iPad Pro 13" (M4)'), findsOneWidget);
+
+      await t.enterText(find.byType(TextField).first, 'zzzzzz');
+      await t.pumpAndSettle();
+      expect(find.text('No matching devices'), findsOneWidget);
+    });
+
+    testWidgets('the Display tab keeps zoom, appearance and accessibility',
+        (t) async {
+      windowSize(t, const Size(1194, 834));
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      expect(find.text('Dark mode'), findsNothing);
+
+      await t.tap(find.text('Display'));
+      await t.pumpAndSettle();
+
+      expect(find.text('Zoom'.toUpperCase()), findsOneWidget);
+      expect(find.byType(Slider), findsWidgets);
+      await t.tap(find.text('Dark mode'));
+      await t.pumpAndSettle();
+      expect(c.brightness, Brightness.dark);
+
+      await t.drag(find.byType(ListView), const Offset(0, -300));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Bold text'));
+      await t.pumpAndSettle();
+      expect(c.boldText, isTrue);
+
+      // Back on Devices, the selected device is still the one in the header.
+      await t.tap(find.text('Devices'));
+      await t.pumpAndSettle();
+      expect(find.text('Dark mode'), findsNothing);
+      expect(find.text('PHONES'), findsOneWidget);
+    });
+
+    for (final entry in {
+      'stacked panel': const Size(800, 600),
+      'narrow stacked panel': const Size(390, 844),
+      'sidebar': const Size(1194, 834),
+    }.entries) {
+      testWidgets('does not overflow in the ${entry.key}', (t) async {
+        windowSize(t, entry.value);
+        for (final id in ['apple.iphone-17-pro', 'samsung.galaxy-z-fold-7']) {
+          final c = DeviceLabController(initialDeviceId: id);
+          await t.pumpWidget(harness(c));
+          await t.pumpAndSettle();
+          expect(t.takeException(), isNull, reason: id);
+
+          await t.tap(find.text('Display'));
+          await t.pumpAndSettle();
+          expect(t.takeException(), isNull, reason: '$id display');
+        }
+      });
+    }
+  });
+
+  group('tools panel filters', () {
+    Widget harness(DeviceLabController c) => DeviceLab(
+          controller: c,
+          builder: (_) => MaterialApp(
+            builder: DeviceLab.appBuilder,
+            home: const SizedBox(),
+          ),
+        );
+
+    void windowSize(WidgetTester t, Size size) {
+      t.view.physicalSize = size;
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+    }
+
+    Finder tiles() => find.byType(ListTile);
+
+    Finder categoryChip(String label) => find.descendant(
+          of: find.byKey(const ValueKey('category-chips')),
+          matching: find.widgetWithText(ChoiceChip, label),
+        );
+
+    Finder subChip(String label) => find.descendant(
+          of: find.byKey(const ValueKey('sub-category-chips')),
+          matching: find.widgetWithText(ChoiceChip, label),
+        );
+
+    // The devices the list shows, found through their names.
+    List<DeviceSpec> listed(WidgetTester t) {
+      final names = [
+        for (final tile in t.widgetList<ListTile>(tiles()))
+          ((tile.title! as Text).data!),
+      ];
+      return [
+        for (final d in DeviceCatalog.all)
+          if (names.contains(d.name)) d,
+      ];
+    }
+
+    // The chip rows scroll sideways in a narrow panel, so a chip may start
+    // off-screen.
+    Future<void> pick(WidgetTester t, Finder chip) async {
+      await t.ensureVisible(chip);
+      await t.tap(chip);
+    }
+
+    Future<DeviceLabController> open(
+      WidgetTester t, {
+      Size size = const Size(1194, 834),
+    }) async {
+      windowSize(t, size);
+      final c = DeviceLabController(initialDeviceId: 'apple.iphone-17-pro');
+      await t.pumpWidget(harness(c));
+      await t.pumpAndSettle();
+      return c;
+    }
+
+    testWidgets('category chips list the categories that have devices',
+        (t) async {
+      await open(t);
+      final present = {for (final d in DeviceCatalog.all) d.category};
+      final labels = {
+        DeviceCategory.phone: 'Phones',
+        DeviceCategory.foldable: 'Foldables',
+        DeviceCategory.tablet: 'Tablets',
+        DeviceCategory.desktop: 'Desktop & breakpoints',
+        DeviceCategory.watch: 'Watches',
+        DeviceCategory.tv: 'TV',
+      };
+      expect(categoryChip('All'), findsOneWidget);
+      for (final entry in labels.entries) {
+        expect(
+          categoryChip(entry.value),
+          present.contains(entry.key) ? findsOneWidget : findsNothing,
+        );
+      }
+
+      await pick(t, categoryChip('Tablets'));
+      await t.pumpAndSettle();
+      final shown = listed(t);
+      expect(shown, isNotEmpty);
+      expect(shown.every((d) => d.category == DeviceCategory.tablet), isTrue);
+      // The section title is redundant once the list is one category.
+      expect(find.text('TABLETS'), findsNothing);
+
+      await pick(t, categoryChip('All'));
+      await t.pumpAndSettle();
+      expect(find.text('PHONES'), findsOneWidget);
+    });
+
+    testWidgets('phones split into iPhone and Android', (t) async {
+      await open(t);
+      expect(find.byKey(const ValueKey('sub-category-chips')), findsNothing);
+
+      await pick(t, categoryChip('Phones'));
+      await t.pumpAndSettle();
+      expect(subChip('All'), findsOneWidget);
+      expect(subChip('iPhone'), findsOneWidget);
+      expect(subChip('Android'), findsOneWidget);
+
+      await pick(t, subChip('iPhone'));
+      await t.pumpAndSettle();
+      var shown = listed(t);
+      expect(shown, isNotEmpty);
+      expect(
+        shown.every((d) =>
+            d.category == DeviceCategory.phone &&
+            d.targetPlatform == TargetPlatform.iOS),
+        isTrue,
+      );
+
+      await pick(t, subChip('Android'));
+      await t.pumpAndSettle();
+      shown = listed(t);
+      expect(shown, isNotEmpty);
+      expect(
+        shown.every((d) =>
+            d.category == DeviceCategory.phone &&
+            d.targetPlatform == TargetPlatform.android),
+        isTrue,
+      );
+    });
+
+    testWidgets('tablets split into iPad and Android tablet', (t) async {
+      await open(t);
+      await pick(t, categoryChip('Tablets'));
+      await t.pumpAndSettle();
+      expect(subChip('iPad'), findsOneWidget);
+      expect(subChip('Android tablet'), findsOneWidget);
+
+      await pick(t, subChip('iPad'));
+      await t.pumpAndSettle();
+      expect(find.text('iPad Pro 13" (M4)'), findsOneWidget);
+      expect(find.text('Pixel Tablet'), findsNothing);
+      expect(
+        listed(t).every((d) => d.targetPlatform == TargetPlatform.iOS),
+        isTrue,
+      );
+
+      await pick(t, subChip('Android tablet'));
+      await t.pumpAndSettle();
+      expect(find.text('Pixel Tablet'), findsOneWidget);
+      expect(find.text('iPad Pro 13" (M4)'), findsNothing);
+    });
+
+    testWidgets('foldables split into book and flip by hinge direction',
+        (t) async {
+      await open(t);
+      await pick(t, categoryChip('Foldables'));
+      await t.pumpAndSettle();
+
+      await pick(t, subChip('Flip'));
+      await t.pumpAndSettle();
+      var shown = listed(t);
+      expect(shown, isNotEmpty);
+      expect(
+        shown.every(
+            (d) => d.screens.any((s) => s.hinge?.axis == Axis.horizontal)),
+        isTrue,
+      );
+
+      await pick(t, subChip('Book'));
+      await t.pumpAndSettle();
+      shown = listed(t);
+      expect(shown, isNotEmpty);
+      expect(
+        shown.every(
+            (d) => d.screens.every((s) => s.hinge?.axis != Axis.horizontal)),
+        isTrue,
+      );
+      expect(find.text('Galaxy Z Fold 7'), findsOneWidget);
+    });
+
+    testWidgets('a category with one kind of device has no sub-category row',
+        (t) async {
+      await open(t);
+      await pick(t, categoryChip('TV'));
+      await t.pumpAndSettle();
+      expect(find.byKey(const ValueKey('sub-category-chips')), findsNothing);
+      expect(find.text('Android TV 4K'), findsOneWidget);
+    });
+
+    testWidgets('choosing a category resets the sub-category', (t) async {
+      await open(t);
+      await pick(t, categoryChip('Phones'));
+      await t.pumpAndSettle();
+      await pick(t, subChip('iPhone'));
+      await t.pumpAndSettle();
+      expect(t.widget<ChoiceChip>(subChip('iPhone')).selected, isTrue);
+
+      await pick(t, categoryChip('Tablets'));
+      await t.pumpAndSettle();
+      expect(t.widget<ChoiceChip>(subChip('All')).selected, isTrue);
+      expect(t.widget<ChoiceChip>(subChip('iPad')).selected, isFalse);
+
+      // Back to Phones: the earlier iPhone choice is not remembered.
+      await pick(t, categoryChip('Phones'));
+      await t.pumpAndSettle();
+      expect(t.widget<ChoiceChip>(subChip('All')).selected, isTrue);
+    });
+
+    testWidgets('chips combine with the search text', (t) async {
+      await open(t);
+      await pick(t, categoryChip('Phones'));
+      await t.pumpAndSettle();
+      await pick(t, subChip('Android'));
+      await t.pumpAndSettle();
+
+      await t.enterText(find.byType(TextField).first, 'Galaxy');
+      await t.pumpAndSettle();
+      var shown = listed(t);
+      expect(shown, isNotEmpty);
+      expect(
+        shown.every((d) =>
+            d.category == DeviceCategory.phone &&
+            d.name.toLowerCase().contains('galaxy')),
+        isTrue,
+      );
+
+      // An iPad matches the text but not the chips.
+      await t.enterText(find.byType(TextField).first, 'iPad');
+      await t.pumpAndSettle();
+      expect(listed(t), isEmpty);
+      expect(
+        find.text('No matching devices in Phones · Android'),
+        findsOneWidget,
+      );
+
+      await pick(t, categoryChip('All'));
+      await t.pumpAndSettle();
+      expect(find.text('iPad Pro 13" (M4)'), findsOneWidget);
+    });
+
+    testWidgets('the empty state names the category alone when only it is set',
+        (t) async {
+      await open(t);
+      await pick(t, categoryChip('Watches'));
+      await t.pumpAndSettle();
+      await t.enterText(find.byType(TextField).first, 'zzzzzz');
+      await t.pumpAndSettle();
+      expect(find.text('No matching devices in Watches'), findsOneWidget);
+    });
+
+    testWidgets('picking a device and switching tabs keeps the chips',
+        (t) async {
+      final c = await open(t);
+      await pick(t, categoryChip('Tablets'));
+      await t.pumpAndSettle();
+      await pick(t, subChip('iPad'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('iPad Pro 11" (M4)'));
+      await t.pumpAndSettle();
+      expect(c.device.name, 'iPad Pro 11" (M4)');
+      expect(t.widget<ChoiceChip>(categoryChip('Tablets')).selected, isTrue);
+      expect(t.widget<ChoiceChip>(subChip('iPad')).selected, isTrue);
+
+      await t.tap(find.text('Display'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Devices'));
+      await t.pumpAndSettle();
+      expect(t.widget<ChoiceChip>(categoryChip('Tablets')).selected, isTrue);
+      expect(t.widget<ChoiceChip>(subChip('iPad')).selected, isTrue);
+    });
+
+    testWidgets(
+        'a selected device that is filtered out does not scroll the '
+        'list', (t) async {
+      final c = await open(t);
+      await pick(t, categoryChip('Phones'));
+      await t.pumpAndSettle();
+      await pick(t, subChip('Android'));
+      await t.pumpAndSettle();
+      expect(c.device.id, 'apple.iphone-17-pro');
+      expect(tiles(), findsWidgets);
+      expect(t.takeException(), isNull);
+    });
+
+    for (final entry in {
+      'stacked panel': const Size(800, 600),
+      'narrow stacked panel': const Size(390, 844),
+      'sidebar': const Size(1194, 834),
+    }.entries) {
+      testWidgets('the chip rows stay put when the list scrolls (${entry.key})',
+          (t) async {
+        await open(t, size: entry.value);
+        await pick(t, categoryChip('Phones'));
+        await t.pumpAndSettle();
+        final before = t.getTopLeft(categoryChip('All')).dy;
+        final subBefore = t.getTopLeft(subChip('iPhone')).dy;
+
+        await t.drag(tiles().hitTestable().first, const Offset(0, -1500));
+        await t.pumpAndSettle();
+        expect(t.getTopLeft(categoryChip('All')).dy, before);
+        expect(t.getTopLeft(subChip('iPhone')).dy, subBefore);
+
+        // Hit-testable without scrolling back.
+        await pick(t, subChip('iPhone'));
+        await t.pumpAndSettle();
+        expect(t.widget<ChoiceChip>(subChip('iPhone')).selected, isTrue);
+        await pick(t, categoryChip('All'));
+        await t.pumpAndSettle();
+        expect(t.widget<ChoiceChip>(categoryChip('All')).selected, isTrue);
+      });
+    }
+
+    testWidgets('a short panel puts both chip levels on one row', (t) async {
+      await open(t, size: const Size(800, 600));
+      await pick(t, categoryChip('Phones'));
+      await t.pumpAndSettle();
+      expect(
+        t.getTopLeft(subChip('iPhone')).dy,
+        t.getTopLeft(categoryChip('Phones')).dy,
+      );
+
+      await open(t);
+      await pick(t, categoryChip('Phones'));
+      await t.pumpAndSettle();
+      expect(
+        t.getTopLeft(subChip('iPhone')).dy,
+        greaterThan(t.getTopLeft(categoryChip('Phones')).dy),
+      );
+    });
+
+    for (final entry in {
+      'stacked panel': const Size(800, 600),
+      'narrow stacked panel': const Size(390, 844),
+      'sidebar': const Size(1194, 834),
+    }.entries) {
+      testWidgets('does not overflow with the chips in the ${entry.key}',
+          (t) async {
+        await open(t, size: entry.value);
+        expect(t.takeException(), isNull);
+        for (final label in ['Phones', 'Foldables', 'Desktop & breakpoints']) {
+          await pick(t, categoryChip(label));
+          await t.pumpAndSettle();
+          expect(t.takeException(), isNull, reason: label);
+        }
+        await t.tap(find.text('Display'));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
   });
 
   group('golden helpers', () {

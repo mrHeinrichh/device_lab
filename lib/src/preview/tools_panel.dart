@@ -5,6 +5,46 @@ import '../model/device_spec.dart';
 import 'device_lab_controller.dart';
 import 'zoom_controls.dart';
 
+/// At or below this height the panel is a short strip under the preview, and
+/// the two filter rows share one line so the list keeps room.
+const double _shortPanel = 480;
+
+/// Below this width the header stacks its rows; at or above it the title and
+/// search share a row. The 320 dp sidebar and a phone-sized window are narrow.
+const double _wideHeader = 560;
+
+String _categoryTitle(DeviceCategory category) => switch (category) {
+      DeviceCategory.phone => 'Phones',
+      DeviceCategory.foldable => 'Foldables',
+      DeviceCategory.tablet => 'Tablets',
+      DeviceCategory.desktop => 'Desktop & breakpoints',
+      DeviceCategory.watch => 'Watches',
+      DeviceCategory.tv => 'TV',
+    };
+
+/// The sub-category of [d] within its category, derived from fields the
+/// catalog already carries: the operating system, and for foldables the
+/// direction of the hinge.
+String _subCategoryOf(DeviceSpec d) {
+  final ios = d.platform == DevicePlatform.ios;
+  return switch (d.category) {
+    DeviceCategory.phone => ios ? 'iPhone' : 'Android',
+    DeviceCategory.tablet => ios ? 'iPad' : 'Android tablet',
+    DeviceCategory.foldable =>
+      d.screens.any((s) => s.hinge?.axis == Axis.horizontal) ? 'Flip' : 'Book',
+    DeviceCategory.desktop => switch (d.platform) {
+        DevicePlatform.macos => 'Mac',
+        DevicePlatform.windows ||
+        DevicePlatform.linux ||
+        DevicePlatform.fuchsia =>
+          'Windows & Linux',
+        _ => 'Web & breakpoints',
+      },
+    DeviceCategory.watch => ios ? 'Apple Watch' : 'Wear OS',
+    DeviceCategory.tv => 'TV',
+  };
+}
+
 class ToolsPanel extends StatefulWidget {
   const ToolsPanel({
     super.key,
@@ -19,204 +59,452 @@ class ToolsPanel extends StatefulWidget {
   State<ToolsPanel> createState() => _ToolsPanelState();
 }
 
-class _ToolsPanelState extends State<ToolsPanel> {
+class _ToolsPanelState extends State<ToolsPanel>
+    with SingleTickerProviderStateMixin {
+  static const int _devicesTab = 0;
+
+  late final TabController _tabs = TabController(length: 2, vsync: this);
   String _query = '';
 
   DeviceLabController get c => widget.controller;
 
   @override
-  Widget build(BuildContext context) {
-    final results = DeviceCatalog.search(_query);
-    final grouped = <DeviceCategory, List<DeviceSpec>>{};
-    for (final d in results) {
-      grouped.putIfAbsent(d.category, () => []).add(d);
-    }
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
 
+  void _search(String value) {
+    setState(() => _query = value);
+    if (value.isNotEmpty && _tabs.index != _devicesTab) {
+      _tabs.animateTo(_devicesTab);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: Theme.of(context).colorScheme.surface,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-        children: [
-          Row(
+      color: scheme.surface,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= _wideHeader;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Expanded(
-                child: Text(
-                  'Device Lab',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+              // Capped so the list always keeps room; only a very short panel
+              // makes the header scroll.
+              ConstrainedBox(
+                constraints:
+                    BoxConstraints(maxHeight: constraints.maxHeight * 0.75),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: _Header(
+                    controller: c,
+                    wide: wide,
+                    onSearch: _search,
+                  ),
                 ),
               ),
-              IconButton(
-                tooltip: 'Hide options',
-                icon: const Icon(Icons.keyboard_arrow_down, size: 22),
-                onPressed: () => c.setToolsVisible(false),
+              TabBar(
+                controller: _tabs,
+                labelStyle:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                tabs: const [
+                  Tab(text: 'Devices', height: 36),
+                  Tab(text: 'Display', height: 36),
+                ],
+              ),
+              Expanded(
+                // Both tabs stay mounted so the device list keeps its scroll
+                // position while the user adjusts a setting and comes back.
+                child: ListenableBuilder(
+                  listenable: _tabs.animation!,
+                  builder: (context, _) => IndexedStack(
+                    index: _tabs.index,
+                    children: [
+                      _DevicesTab(
+                        controller: c,
+                        query: _query,
+                        compact: constraints.maxHeight <= _shortPanel,
+                      ),
+                      _DisplayTab(
+                        controller: c,
+                        availableLocales: widget.availableLocales,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
-          ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// The part of the panel that never scrolls: what is selected and the controls
+/// that are wanted after every switch, so changing device and then rotating or
+/// folding it needs no trip back through the list.
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.controller,
+    required this.wide,
+    required this.onSearch,
+  });
+
+  final DeviceLabController controller;
+  final bool wide;
+  final ValueChanged<String> onSearch;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
+    final title = const Text(
+      'Device Lab',
+      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+    );
+    final search = TextField(
+      decoration: const InputDecoration(
+        isDense: true,
+        prefixIcon: Icon(Icons.search, size: 18),
+        hintText: 'Search devices',
+        border: OutlineInputBorder(),
+      ),
+      onChanged: onSearch,
+    );
+    final hide = IconButton(
+      tooltip: 'Hide options',
+      visualDensity: VisualDensity.compact,
+      icon: const Icon(Icons.keyboard_arrow_down, size: 22),
+      onPressed: () => c.setToolsVisible(false),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (wide)
+          Row(
+            children: [
+              title,
+              const SizedBox(width: 16),
+              Expanded(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  child: search,
+                ),
+              ),
+              const Spacer(),
+              hide,
+            ],
+          )
+        else ...[
+          Row(children: [Expanded(child: title), hide]),
           const SizedBox(height: 4),
-          TextField(
-            decoration: const InputDecoration(
-              isDense: true,
-              prefixIcon: Icon(Icons.search, size: 18),
-              hintText: 'Search devices',
-              border: OutlineInputBorder(),
+          search,
+        ],
+        const SizedBox(height: 8),
+        _ViewportSummary(controller: c, wide: wide),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _Chip(
+              label: 'Portrait',
+              icon: Icons.stay_current_portrait,
+              selected: c.orientation == Orientation.portrait,
+              onTap: c.canRotate
+                  ? () => c.setOrientation(Orientation.portrait)
+                  : null,
             ),
-            onChanged: (v) => setState(() => _query = v),
-          ),
-          const SizedBox(height: 12),
-          _ViewportSummary(controller: c),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
+            _Chip(
+              label: 'Landscape',
+              icon: Icons.stay_current_landscape,
+              selected: c.orientation == Orientation.landscape,
+              onTap: c.canRotate
+                  ? () => c.setOrientation(Orientation.landscape)
+                  : null,
+            ),
+            if (c.canFold)
+              for (final p in FoldPosture.values)
+                _Chip(
+                  label: switch (p) {
+                    FoldPosture.folded => 'Cover',
+                    FoldPosture.halfOpened => 'Half-open',
+                    FoldPosture.flat => 'Unfolded',
+                  },
+                  selected: c.posture == p,
+                  onTap: () => c.setPosture(p),
+                ),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
               icon: const Icon(Icons.fullscreen, size: 18),
               label: const Text('Show original screen'),
               onPressed: () => c.setPreviewing(false),
             ),
-          ),
-          _Section(
-            title: 'Zoom',
-            child: ZoomControls(controller: c),
-          ),
-          _Section(
-            title: 'Layout',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _Chip(
-                      label: 'Portrait',
-                      icon: Icons.stay_current_portrait,
-                      selected: c.orientation == Orientation.portrait,
-                      onTap: c.canRotate
-                          ? () => c.setOrientation(Orientation.portrait)
-                          : null,
-                    ),
-                    _Chip(
-                      label: 'Landscape',
-                      icon: Icons.stay_current_landscape,
-                      selected: c.orientation == Orientation.landscape,
-                      onTap: c.canRotate
-                          ? () => c.setOrientation(Orientation.landscape)
-                          : null,
-                    ),
-                  ],
+          ],
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+}
+
+/// The Devices tab: category and sub-category chips pinned above the catalog
+/// list. The selection lives here, so it survives picking a device and
+/// switching tabs.
+class _DevicesTab extends StatefulWidget {
+  const _DevicesTab({
+    required this.controller,
+    required this.query,
+    required this.compact,
+  });
+
+  final DeviceLabController controller;
+  final String query;
+
+  /// Put the sub-category chips on the category row instead of below it.
+  final bool compact;
+
+  @override
+  State<_DevicesTab> createState() => _DevicesTabState();
+}
+
+class _DevicesTabState extends State<_DevicesTab> {
+  final GlobalKey _subsKey = GlobalKey();
+  DeviceCategory? _category;
+  String? _sub;
+
+  void _selectCategory(DeviceCategory? category) {
+    setState(() {
+      _category = category;
+      _sub = null;
+    });
+    if (!widget.compact) return;
+    // On a shared row the sub-categories sit after the categories, which may
+    // be scrolled out of sight on a narrow panel.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _subsKey.currentContext;
+      if (!mounted || context == null) return;
+      Scrollable.ensureVisible(
+        context,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      );
+    });
+  }
+
+  Widget _group(Key key, List<Widget> chips) => Row(
+        key: key,
+        children: [
+          for (final chip in chips)
+            Padding(padding: const EdgeInsets.only(right: 8), child: chip),
+        ],
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final all = DeviceCatalog.all;
+    final categories = [
+      for (final category in DeviceCategory.values)
+        if (all.any((d) => d.category == category)) category,
+    ];
+    final category = categories.contains(_category) ? _category : null;
+    final subs = <String>[];
+    if (category != null) {
+      for (final d in all) {
+        if (d.category != category) continue;
+        final sub = _subCategoryOf(d);
+        if (!subs.contains(sub)) subs.add(sub);
+      }
+    }
+    final sub = subs.contains(_sub) ? _sub : null;
+
+    final categoryChips = _group(const ValueKey('category-chips'), [
+      _Chip(
+        label: 'All',
+        selected: category == null,
+        onTap: () => _selectCategory(null),
+      ),
+      for (final c in categories)
+        _Chip(
+          label: _categoryTitle(c),
+          selected: category == c,
+          onTap: () => _selectCategory(c),
+        ),
+    ]);
+    final subChips = subs.length > 1
+        ? KeyedSubtree(
+            key: _subsKey,
+            child: _group(const ValueKey('sub-category-chips'), [
+              _Chip(
+                label: 'All',
+                selected: sub == null,
+                onTap: () => setState(() => _sub = null),
+              ),
+              for (final s in subs)
+                _Chip(
+                  label: s,
+                  selected: sub == s,
+                  onTap: () => setState(() => _sub = s),
                 ),
-                if (c.canFold) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final p in FoldPosture.values)
-                        _Chip(
-                          label: switch (p) {
-                            FoldPosture.folded => 'Cover',
-                            FoldPosture.halfOpened => 'Half-open',
-                            FoldPosture.flat => 'Unfolded',
-                          },
-                          selected: c.posture == p,
-                          onTap: () => c.setPosture(p),
-                        ),
-                    ],
-                  ),
-                ],
+            ]),
+          )
+        : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.compact)
+          _ChipRow(
+            children: [
+              categoryChips,
+              if (subChips != null) ...[
+                const SizedBox(height: 20, child: VerticalDivider(width: 17)),
+                subChips,
               ],
-            ),
+            ],
+          )
+        else ...[
+          _ChipRow(children: [categoryChips]),
+          if (subChips != null) _ChipRow(children: [subChips]),
+        ],
+        Expanded(
+          child: _DeviceList(
+            controller: widget.controller,
+            query: widget.query,
+            category: category,
+            subCategory: sub,
           ),
-          _Section(
-            title: 'Custom resolution',
-            child: _FreeformControls(controller: c),
-          ),
-          _Section(
-            title: 'Appearance',
-            child: Column(
-              children: [
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Dark mode'),
-                  value: c.brightness == Brightness.dark,
-                  onChanged: (v) => c.setBrightness(
-                    v ? Brightness.dark : Brightness.light,
-                  ),
-                ),
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Device frame'),
-                  value: c.showFrame,
-                  onChanged: c.isFreeform ? null : c.setShowFrame,
-                ),
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Safe area overlay'),
-                  value: c.showSafeAreas,
-                  onChanged: c.setShowSafeAreas,
-                ),
-              ],
-            ),
-          ),
-          _Section(
-            title: 'Accessibility',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Text scale  ×${c.textScale.toStringAsFixed(2)}'),
-                Slider(
-                  min: 0.5,
-                  max: 3.5,
-                  divisions: 30,
-                  value: c.textScale,
-                  onChanged: c.setTextScale,
-                ),
-                _Toggle('Bold text', c.boldText, c.setBoldText),
-                _Toggle('High contrast', c.highContrast, c.setHighContrast),
-                _Toggle('Invert colors', c.invertColors, c.setInvertColors),
-                _Toggle(
-                  'Disable animations',
-                  c.disableAnimations,
-                  c.setDisableAnimations,
-                ),
-                _Toggle(
-                  'Screen reader nav',
-                  c.accessibleNavigation,
-                  c.setAccessibleNavigation,
-                ),
-              ],
-            ),
-          ),
-          if (widget.availableLocales.length > 1)
-            _Section(
-              title: 'Locale',
-              child: DropdownButton<Locale>(
-                isExpanded: true,
-                value: c.locale ?? widget.availableLocales.first,
-                items: [
-                  for (final l in widget.availableLocales)
-                    DropdownMenuItem(value: l, child: Text(l.toLanguageTag())),
-                ],
-                onChanged: c.setLocale,
+        ),
+      ],
+    );
+  }
+}
+
+/// One horizontally scrolling row of chips.
+class _ChipRow extends StatelessWidget {
+  const _ChipRow({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+        child: Row(children: children),
+      );
+}
+
+/// The device catalog, grouped by category and filtered by [query],
+/// [category] and [subCategory]. Reveals the selected device when it first
+/// appears and when the selection changes from elsewhere, so the list never
+/// opens scrolled away from what is selected.
+class _DeviceList extends StatefulWidget {
+  const _DeviceList({
+    required this.controller,
+    required this.query,
+    required this.category,
+    required this.subCategory,
+  });
+
+  final DeviceLabController controller;
+  final String query;
+  final DeviceCategory? category;
+  final String? subCategory;
+
+  @override
+  State<_DeviceList> createState() => _DeviceListState();
+}
+
+class _DeviceListState extends State<_DeviceList> {
+  final GlobalKey _selectedKey = GlobalKey();
+
+  String get _selectedId =>
+      widget.controller.isFreeform ? '' : widget.controller.device.id;
+
+  @override
+  void initState() {
+    super.initState();
+    _reveal(centered: true);
+  }
+
+  @override
+  void didUpdateWidget(_DeviceList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) _reveal(centered: true);
+  }
+
+  /// Called after every build in which the selection moved.
+  void _reveal({required bool centered}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _selectedKey.currentContext;
+      if (!mounted || context == null) return;
+      Scrollable.ensureVisible(
+        context,
+        alignment: 0.5,
+        alignmentPolicy: centered
+            ? ScrollPositionAlignmentPolicy.explicit
+            : ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      );
+    });
+  }
+
+  String? _lastSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.controller;
+    final selectedId = _selectedId;
+    if (_lastSelected != null && _lastSelected != selectedId) {
+      _reveal(centered: false);
+    }
+    _lastSelected = selectedId;
+
+    final grouped = <DeviceCategory, List<DeviceSpec>>{};
+    for (final d in DeviceCatalog.search(widget.query)) {
+      if (widget.category != null && d.category != widget.category) continue;
+      if (widget.subCategory != null &&
+          _subCategoryOf(d) != widget.subCategory) {
+        continue;
+      }
+      grouped.putIfAbsent(d.category, () => []).add(d);
+    }
+    // A plain column rather than a lazy list: the selected tile has to exist
+    // to be scrolled to, and the catalog is a few hundred rows at most.
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (grouped.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Text(
+                [
+                  'No matching devices',
+                  if (widget.category != null)
+                    'in ${[
+                      _categoryTitle(widget.category!),
+                      if (widget.subCategory != null) widget.subCategory!,
+                    ].join(' · ')}',
+                ].join(' '),
+                textAlign: TextAlign.center,
               ),
             ),
           for (final entry in grouped.entries)
             _Section(
-              title: switch (entry.key) {
-                DeviceCategory.phone => 'Phones',
-                DeviceCategory.foldable => 'Foldables',
-                DeviceCategory.tablet => 'Tablets',
-                DeviceCategory.desktop => 'Desktop & breakpoints',
-                DeviceCategory.watch => 'Watches',
-                DeviceCategory.tv => 'TV',
-              },
+              title: widget.category == null ? _categoryTitle(entry.key) : null,
               child: Column(
                 children: [
                   for (final d in entry.value)
                     _DeviceTile(
+                      key: d.id == selectedId ? _selectedKey : null,
                       device: d,
-                      selected: c.device.id == d.id && !c.isFreeform,
+                      selected: d.id == selectedId,
                       onTap: () => c.selectDevice(d),
                     ),
                 ],
@@ -228,10 +516,112 @@ class _ToolsPanelState extends State<ToolsPanel> {
   }
 }
 
-class _ViewportSummary extends StatelessWidget {
-  const _ViewportSummary({required this.controller});
+/// Zoom, custom resolution, appearance, accessibility and locale: the
+/// settings that are changed occasionally rather than after every switch.
+class _DisplayTab extends StatelessWidget {
+  const _DisplayTab({required this.controller, required this.availableLocales});
 
   final DeviceLabController controller;
+  final List<Locale> availableLocales;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+      children: [
+        _Section(
+          title: 'Zoom',
+          child: ZoomControls(controller: c),
+        ),
+        _Section(
+          title: 'Custom resolution',
+          child: _FreeformControls(controller: c),
+        ),
+        _Section(
+          title: 'Appearance',
+          child: Column(
+            children: [
+              SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Dark mode'),
+                value: c.brightness == Brightness.dark,
+                onChanged: (v) => c.setBrightness(
+                  v ? Brightness.dark : Brightness.light,
+                ),
+              ),
+              SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Device frame'),
+                value: c.showFrame,
+                onChanged: c.isFreeform ? null : c.setShowFrame,
+              ),
+              SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Safe area overlay'),
+                value: c.showSafeAreas,
+                onChanged: c.setShowSafeAreas,
+              ),
+            ],
+          ),
+        ),
+        _Section(
+          title: 'Accessibility',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Text scale  ×${c.textScale.toStringAsFixed(2)}'),
+              Slider(
+                min: 0.5,
+                max: 3.5,
+                divisions: 30,
+                value: c.textScale,
+                onChanged: c.setTextScale,
+              ),
+              _Toggle('Bold text', c.boldText, c.setBoldText),
+              _Toggle('High contrast', c.highContrast, c.setHighContrast),
+              _Toggle('Invert colors', c.invertColors, c.setInvertColors),
+              _Toggle(
+                'Disable animations',
+                c.disableAnimations,
+                c.setDisableAnimations,
+              ),
+              _Toggle(
+                'Screen reader nav',
+                c.accessibleNavigation,
+                c.setAccessibleNavigation,
+              ),
+            ],
+          ),
+        ),
+        if (availableLocales.length > 1)
+          _Section(
+            title: 'Locale',
+            child: DropdownButton<Locale>(
+              isExpanded: true,
+              value: c.locale ?? availableLocales.first,
+              items: [
+                for (final l in availableLocales)
+                  DropdownMenuItem(value: l, child: Text(l.toLanguageTag())),
+              ],
+              onChanged: c.setLocale,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ViewportSummary extends StatelessWidget {
+  const _ViewportSummary({required this.controller, required this.wide});
+
+  final DeviceLabController controller;
+
+  /// Name and details share one line when there is room for it.
+  final bool wide;
 
   @override
   Widget build(BuildContext context) {
@@ -241,32 +631,39 @@ class _ViewportSummary extends StatelessWidget {
       size.width * screen.pixelRatio,
       size.height * screen.pixelRatio,
     );
+    final name = Text(
+      controller.isFreeform ? 'Custom viewport' : controller.device.name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontWeight: FontWeight.w600),
+    );
+    final details = Text(
+      '${size.width.toStringAsFixed(0)} × ${size.height.toStringAsFixed(0)} dp'
+      '  ·  @${screen.pixelRatio}x'
+      '  ·  ${px.width.toStringAsFixed(0)} × ${px.height.toStringAsFixed(0)} px'
+      '${screen.ppi == null ? '' : '  ·  ${screen.ppi!.round()} ppi'}',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
+    );
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            controller.isFreeform ? 'Custom viewport' : controller.device.name,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${size.width.toStringAsFixed(0)} × ${size.height.toStringAsFixed(0)} dp'
-            '   ·   @${screen.pixelRatio}x',
-            style: const TextStyle(fontSize: 12),
-          ),
-          Text(
-            '${px.width.toStringAsFixed(0)} × ${px.height.toStringAsFixed(0)} px'
-            '${screen.ppi == null ? '' : '  ·  ${screen.ppi!.round()} ppi'}',
-            style: const TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
-          ),
-        ],
-      ),
+      child: wide
+          ? Row(
+              children: [
+                name,
+                const SizedBox(width: 12),
+                Expanded(child: details),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [name, const SizedBox(height: 2), details],
+            ),
     );
   }
 }
@@ -391,6 +788,7 @@ class _FreeformControlsState extends State<_FreeformControls> {
 
 class _DeviceTile extends StatelessWidget {
   const _DeviceTile({
+    super.key,
     required this.device,
     required this.selected,
     required this.onTap,
@@ -430,9 +828,10 @@ class _DeviceTile extends StatelessWidget {
 }
 
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
+  const _Section({this.title, required this.child});
 
-  final String title;
+  /// Omitted when the list is already narrowed to one category.
+  final String? title;
   final Widget child;
 
   @override
@@ -441,16 +840,18 @@ class _Section extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title.toUpperCase(),
-              style: const TextStyle(
-                fontSize: 11,
-                letterSpacing: 0.8,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF9E9E9E),
+            if (title != null) ...[
+              Text(
+                title!.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 0.8,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF9E9E9E),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
+              const SizedBox(height: 6),
+            ],
             child,
           ],
         ),
@@ -475,6 +876,8 @@ class _Chip extends StatelessWidget {
         label: Text(label, style: const TextStyle(fontSize: 12)),
         avatar: icon == null ? null : Icon(icon, size: 16),
         selected: selected,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         onSelected: onTap == null ? null : (_) => onTap!(),
       );
 }

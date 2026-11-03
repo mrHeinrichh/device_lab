@@ -2,6 +2,13 @@
 
 Preview a Flutter app on any device without booting a simulator.
 
+> **This fork** ([AnasQasem/device_lab](https://github.com/AnasQasem/device_lab)) adds, on top of
+> upstream `master`: a tools panel with pinned quick controls, Devices / Display tabs and category chips;
+> debug VM service extensions (`ext.deviceLab.*`) that sweep a running app across every device of a
+> category; a [device preview guide](doc/guide.md); and an agent skill ([`skills/device-lab`](skills/device-lab/SKILL.md)). Install the skill in Claude Code with
+> `claude plugin marketplace add https://github.com/AnasQasem/device_lab.git` and
+> `claude plugin install device-lab@device-lab`.
+
 `device_lab` wraps your app, overrides `MediaQuery`, and renders it inside a
 device frame with a tools panel for size, orientation, fold posture, locale,
 text scale and accessibility flags.
@@ -161,6 +168,15 @@ behave as they do without it, and dialogs open inside the device screen. The
 app is laid out at the exact simulated size and then scaled to fit, so a
 device larger than the window does not change its layout.
 
+## The tools panel
+
+The top of the panel stays put: the current device, Portrait / Landscape, the
+fold postures of a foldable and **Show original screen**. Below it, the
+**Devices** tab lists the catalog (search and the category chips, such as
+Tablets then iPad or Android tablet, filter it) and the **Display** tab
+holds zoom, custom resolution, appearance, accessibility and locale. Switching
+devices and then rotating or folding the new one needs no scrolling.
+
 ## Rotating and zooming
 
 Rotate turns the whole device, not just the screen. The camera cutout, side
@@ -255,6 +271,71 @@ DeviceLab(
 
 Reads and writes are synchronous, so load your store before `runApp`. Pass
 `storage: null` to forget the selection on every rebuild.
+
+## Automation: service extensions
+
+For coding agents and CI: while a debug (or profile) app is running with an
+enabled `DeviceLab`, you can sweep it across a whole device category over the
+VM service or from DevTools, and get back layout errors and screenshots. The
+package registers the extensions itself, so the app needs no wiring. They act on
+the most recently mounted enabled `DeviceLab`, and do not exist in release
+builds. With no `DeviceLab` mounted they return an extension error.
+
+Call them as `ext.deviceLab.<name>`, with string parameters. Every response is
+JSON. Bad parameters return the VM service's invalid-params error.
+
+`ext.deviceLab.devices` lists the catalog. All parameters are optional.
+
+| Param | Meaning |
+| --- | --- |
+| `category` | A `DeviceCategory` name: `phone`, `foldable`, `tablet`, `desktop`, `watch`, `tv` |
+| `platform` | A `TargetPlatform` name, e.g. `iOS`, `android` |
+| `ids` | Comma-separated device ids. Overrides the filters |
+
+```json
+{"count": 1, "devices": [{"id": "apple.iphone-17-pro", "name": "iPhone 17 Pro",
+  "category": "phone", "platform": "iOS", "size": [402, 874],
+  "rotatable": true, "foldable": false}]}
+```
+
+`ext.deviceLab.sweep` applies each device, orientation and posture in turn,
+waits for the app to settle and records what went wrong. It takes the same
+selectors as `devices`, plus:
+
+| Param | Meaning |
+| --- | --- |
+| `offset`, `limit` | Batch the device list |
+| `orientations` | `both` (default, only for devices that can rotate) or `natural` |
+| `postures` | Foldables only: `all` (default, folded and flat), `every` (folded, halfOpened, flat) or `open` |
+| `settleMs` | Wait before the next frame is awaited. Default `600` |
+| `screenshots` | `none` (default), `failures` or `all` |
+| `pixelRatio` | Screenshot scale. Default `0.5` |
+
+```json
+{"count": 2, "failed": 1, "results": [
+  {"id": "apple.iphone-17-pro", "name": "iPhone 17 Pro",
+   "orientation": "portrait", "posture": null, "size": [402, 874],
+   "errors": ["A RenderFlex overflowed by 98 pixels on the right. (file:///app/lib/home.dart:42:9)"],
+   "screenshot": "<base64 PNG>"}]}
+```
+
+Errors are collected from `FlutterError.onError` (the previous handler is still
+called) and de-duplicated per case. Each is the error's summary plus the widget
+location Flutter blames. Errors from the lab's own panel are prefixed
+`[device_lab] ` and do not count towards `failed`; `screenshot` is present only
+when requested. The previewed device, orientation, posture and preview state are
+restored afterwards, and the preview is switched on for the sweep if it was
+hidden. A second sweep while one is running returns "sweep already running".
+
+`ext.deviceLab.show` applies one case and keeps it. It takes `id` (required),
+`orientation` (`portrait` or `landscape`) and `posture` (a `FoldPosture` name),
+shows the preview if hidden, waits like the sweep and returns the case record
+without a screenshot.
+
+`ext.deviceLab.capture` returns `{id, orientation, posture, size, screenshot}`
+for the current state. It takes `pixelRatio` (default `0.5`). The PNG is the
+simulated screen only, with no frame and no panel, and works while the preview
+is hidden.
 
 ## Disabling in release
 

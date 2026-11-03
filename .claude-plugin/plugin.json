@@ -1,0 +1,8 @@
+{
+  "name": "device-lab",
+  "version": "0.3.4",
+  "description": "Agent skill for previewing a Flutter app on any phone, tablet or foldable with device_lab, and sweeping every device of a class (all tablets, all phones) for layout errors through its debug VM service extensions.",
+  "author": {
+    "name": "Anas Qasem"
+  }
+}

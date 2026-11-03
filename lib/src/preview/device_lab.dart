@@ -6,6 +6,7 @@ import '../model/device_spec.dart';
 import 'device_lab_controller.dart';
 import 'device_lab_storage.dart';
 import 'device_stage.dart';
+import 'service_extensions.dart';
 import 'tools_panel.dart';
 import 'zoom_controls.dart';
 
@@ -141,6 +142,9 @@ class DeviceLab extends StatefulWidget {
 class _DeviceLabState extends State<DeviceLab> {
   late DeviceLabController _controller;
 
+  // Keys the boundary around the app, which `capture` reads.
+  final GlobalKey _captureKey = GlobalKey(debugLabel: 'device_lab.capture');
+
   @override
   void initState() {
     super.initState();
@@ -152,6 +156,7 @@ class _DeviceLabState extends State<DeviceLab> {
         );
     final alignment = widget.restoreButtonAlignment;
     if (alignment != null) _controller.setRestoreAlignment(alignment);
+    attachExtensions(_controller, _captureKey);
   }
 
   @override
@@ -168,6 +173,7 @@ class _DeviceLabState extends State<DeviceLab> {
 
   @override
   void dispose() {
+    detachExtensions(_controller);
     if (widget.controller == null) _controller.dispose();
     super.dispose();
   }
@@ -181,6 +187,7 @@ class _DeviceLabState extends State<DeviceLab> {
         controller: _controller,
         child: _DeviceLabHost(
           app: app,
+          captureKey: _captureKey,
           availableLocales: widget.availableLocales,
           backgroundColor: widget.backgroundColor,
           showRestoreButton: widget.showRestoreButton,
@@ -239,12 +246,14 @@ class _PreviewShortcuts extends StatelessWidget {
 class _DeviceLabHost extends StatelessWidget {
   const _DeviceLabHost({
     required this.app,
+    required this.captureKey,
     required this.availableLocales,
     required this.showRestoreButton,
     this.backgroundColor,
   });
 
   final Widget app;
+  final GlobalKey captureKey;
   final List<Locale> availableLocales;
   final bool showRestoreButton;
   final Color? backgroundColor;
@@ -263,7 +272,9 @@ class _DeviceLabHost extends StatelessWidget {
           availableLocales: availableLocales,
           backgroundColor: backgroundColor,
           showRestoreButton: showRestoreButton,
-          child: app,
+          // Present whether or not the preview is showing, so toggling it never
+          // changes the app's tree shape (and never remounts the app).
+          child: RepaintBoundary(key: captureKey, child: app),
         ),
       ),
     );
@@ -341,7 +352,7 @@ class _HostShell extends StatelessWidget {
                     height: sidebar
                         ? null
                         : expanded
-                            ? 300
+                            ? (constraints.maxWidth >= 560 ? 300 : 440)
                             : collapsed
                                 ? barHeight
                                 : 0,
