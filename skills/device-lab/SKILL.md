@@ -1,6 +1,6 @@
 ---
 name: device-lab
-description: Previews and tests a Flutter app on any phone, tablet or foldable with the device_lab package, and sweeps every catalog device of a class through its debug VM service extensions. Use when asked to make sure an app is responsive on a device class (all tablets, all phones, foldables, iPads, Android tablets), to test on different devices or screen sizes, to add device_lab, a device preview or a device frame, or to preview a foldable or iPad layout without the hardware. Covers plain Flutter apps and apps on flutter_pixil_framework, where fold detection and platform styling need extra wiring. Also use when a preview shows the wrong thing - a squashed page, a fold layout or side drawer that never appears, sheets in the wrong platform style, a '!locked' gesture assertion, or ProviderNotFoundException for FoldablePhoneCubit.
+description: Previews and tests a Flutter app on any phone, tablet or foldable with the device_lab package, and sweeps every catalog device of a class through its debug VM service extensions. Use when asked to make sure an app is responsive on a device class (all tablets, all phones, foldables, iPads, Android tablets), to test on different devices or screen sizes, to add device_lab, a device preview or a device frame, or to preview a foldable or iPad layout without the hardware. Also use when a preview shows the wrong thing - a squashed page, a fold layout or side panel that never appears, platform styling that does not follow the picked device, or a '!locked' gesture assertion after switching devices.
 ---
 
 # device_lab: preview and sweep an app across devices
@@ -23,13 +23,13 @@ agent switch devices and collect layout errors and screenshots across a whole ca
 3. **`MaterialApp.builder` gets `DeviceLab.appBuilder`.** It installs the simulated `MediaQuery` and
    `Theme.platform` below the app's navigator, so routes, sheets and dialogs see the device. Widgets
    above that builder see the real window.
-4. **Know what cannot follow.** `dart:io` `Platform.isIOS`/`isAndroid`, `View.of(context)`,
-   `PlatformDispatcher.instance.views`, `MediaQueryData.fromView`, platform channels, plugins and sensors
-   keep the real device. Say so whenever a result depends on one of them.
-5. **flutter_pixil_framework apps need the Pixil wiring** in [references/pixil.md](references/pixil.md)
-   (framework 1.5.0 or newer): `PixilApp.builder`, `PixilApp.foldableOverride`, a sensor-less
-   `FoldablePhoneCubit` driven by the posture, `debugDefaultTargetPlatformOverride` and a second
-   `ResponsiveBootstrap`. Without it, sizes follow the preview but folds and platform do not.
+4. **Know what cannot follow on its own.** `dart:io` `Platform.isIOS`/`isAndroid`, `View.of(context)`,
+   `PlatformDispatcher.instance.views`, `MediaQueryData.fromView`, platform channels, plugins, sensors,
+   `defaultTargetPlatform`, and metrics cached above `MaterialApp.builder` keep the real device. Say so
+   whenever a result depends on one of them.
+5. **Apps that detect device facts themselves** (a foldable flag from a hinge sensor, styling by
+   `defaultTargetPlatform`, a screen-metrics cache above the builder) need the wiring in
+   [references/app-integration.md](references/app-integration.md) for those facts to follow the preview.
 6. **A sweep means every device of the class**, not a sample, in both orientations and, for foldables,
    folded and flat.
 7. **Debug runs only** for platform simulation: Flutter ignores `debugDefaultTargetPlatformOverride` in
@@ -38,7 +38,7 @@ agent switch devices and collect layout errors and screenshots across a whole ca
 ## Workflow A — add device_lab to an app
 
 1. Add the dependency (Rule 2) as a regular `dependencies:` entry — `lib/` imports it.
-2. **Plain Flutter app:** wrap the root and set the builder.
+2. Wrap the root and set the builder:
 
    ```dart
    const bool _kDeviceLab = bool.fromEnvironment('DEVICE_LAB') && !kReleaseMode;
@@ -53,10 +53,13 @@ agent switch devices and collect layout errors and screenshots across a whole ca
    );
    ```
 
-   **flutter_pixil_framework app:** follow [references/pixil.md](references/pixil.md) instead (a part
-   file next to the widget that returns `PixilApp`, plus three lines in it).
-3. Add a run configuration: the app's usual debug command plus `--dart-define=DEVICE_LAB=true`.
-4. Validate: analyze clean; a run **without** the define is unchanged; with it, the frame and panel
+   If the app builds its `MaterialApp` inside a wrapper widget, pass `DeviceLab.appBuilder` through the
+   wrapper's `builder` hook, composed with any builder it already has. If the app's locale is driven by
+   its own state, leave `DeviceLab.localeOf` out.
+3. Check Rule 5: if the app reads fold state, platform or metrics outside the widget tree, add
+   [references/app-integration.md](references/app-integration.md).
+4. Add a run configuration: the app's usual debug command plus `--dart-define=DEVICE_LAB=true`.
+5. Validate: analyze clean; a run **without** the define is unchanged; with it, the frame and panel
    appear. Tell the user to stop and relaunch — a dependency or root change is not hot-reloadable.
 
 ## Workflow B — "make sure the app is responsive on <device class>"
@@ -90,17 +93,17 @@ agent switch devices and collect layout errors and screenshots across a whole ca
 | Large device (iPad portrait) renders small or squashed; `MediaQuery` reports the full size | pub.dev 0.3.2 | Rule 2 |
 | Dialog or root sheet outside the device frame | pub.dev 0.3.2 | Rule 2 |
 | `ext.deviceLab.*` not found | Not a debug/profile run, no `DeviceLab` mounted, or started before device_lab was added | Run with the define in debug; hot restart |
-| Fold picked, phone or tablet layout shows; fold route opens full screen | Pixil app without `foldableOverride`, framework < 1.5.0, or code reading the bootstrap detection | references/pixil.md; read `PixilFrameWork().isFoldable` |
-| `ProviderNotFoundException` for `FoldablePhoneCubit` | Preview cubit not provided below the navigator | references/pixil.md (`_previewBuilder`) |
-| Android device picked, sheets still iOS-style | No platform override, or a profile run | references/pixil.md; run in debug |
+| A foldable is picked but the fold layout or side panel never appears | The app reads its fold flag from a sensor or native check | references/app-integration.md |
+| Android device picked, platform styling stays the host's | The app styles by `defaultTargetPlatform`, or a profile run | references/app-integration.md; run in debug |
 | `'!locked': is not true` after a device change | `reassembleApplication` called synchronously inside the panel tap | Defer with `Future<void>.microtask` |
-| `16.w` sizes match the host | Pixil's `ResponsiveBootstrap` sits above `PixilApp.builder` | The second `ResponsiveBootstrap` in references/pixil.md |
+| Scaled sizes match the host | Metrics cached by a widget above `MaterialApp.builder` | Mount a second instance below `DeviceLab.appBuilder` |
 | A value is wrong only inside a phone-sized preview widget | Read under a pinned `MediaQuery` | Read it on the outer context and pass it in |
 | Pick lost after hot restart | `SessionDeviceLabStorage` is in memory | Expected; implement `DeviceLabStorage` to persist |
 
 ## Go deeper
 
 - [references/sweep.md](references/sweep.md) — every extension, parameter and response field.
-- [references/pixil.md](references/pixil.md) — the complete flutter_pixil_framework wiring.
+- [references/app-integration.md](references/app-integration.md) — driving the app's own fold state,
+  platform and metrics from the preview.
 - `doc/guide.md` in this repository — the full guide for people, including how to write code that
   previews correctly.

@@ -4,9 +4,8 @@ This guide adds an opt-in **device preview** to a Flutter app with this fork of
 [`device_lab`](https://github.com/mrHeinrichh/device_lab). One debug run on a tablet or a large emulator
 can then be shown as any phone, tablet or foldable from the catalog: its screen size, safe areas,
 orientation, fold posture and hinge, and its platform styling. It also covers sweeping a whole device
-category automatically (every tablet, every phone) and the extra wiring an app on
-`flutter_pixil_framework` needs. The preview is compiled out of every build that does not ask for it,
-and out of every release build.
+category automatically (every tablet, every phone). The preview is compiled out of every build that does
+not ask for it, and out of every release build.
 
 ## Contents
 
@@ -20,19 +19,19 @@ and out of every release build.
 
 ## What the preview can and cannot simulate
 
-`DeviceLab.appBuilder` swaps the `MediaQuery` the app sees, and the stage lays the app out at the
-simulated size. On a flutter_pixil_framework app, the Pixil wiring additionally drives the framework's
-fold flag, its fold cubit and Flutter's platform. Anything that asks the **real** device or window keeps
-the real answer.
+`DeviceLab.appBuilder` swaps the `MediaQuery` and `Theme.platform` the app sees, and the stage lays the app
+out at the simulated size. Anything that asks the **real** device or window keeps the real answer, unless
+the app drives it from the preview itself (see
+[Driving an app's own device facts](../skills/device-lab/references/app-integration.md)).
 
 | Signal | Follows the picked device? | Notes |
 | --- | --- | --- |
 | `MediaQuery` size, padding, orientation, `displayFeatures` (hinge), text scale, brightness | Yes | Below `MaterialApp.builder` — the routes, sheets and dialogs. |
 | Layout constraints (`LayoutBuilder`, `Expanded`) | Yes | pub.dev's 0.3.2 laid large devices out squashed; this fork does not. |
 | `Theme.platform` | Yes | Set by `DeviceLab.appBuilder`. |
-| `defaultTargetPlatform` | Pixil wiring, debug runs only | Through `debugDefaultTargetPlatformOverride`, which Flutter honours only in debug. |
-| Pixil: phone/tablet slot of `BaseScreen(responsiveUi:)`, `16.w` / `14.sp` | Yes / with the Pixil wiring | The slot follows `MediaQuery`; the `num` extensions need the second `ResponsiveBootstrap`. |
-| Pixil: `PixilFrameWork().isFoldable`, fold layouts, routes, sheets, `FoldablePhoneCubit` | With the Pixil wiring (framework ≥ 1.5.0) | Through `PixilApp.foldableOverride` and a cubit driven by the posture. |
+| `defaultTargetPlatform` | Only if the app sets the override | `debugDefaultTargetPlatformOverride`, honoured by Flutter in debug runs only. |
+| A fold flag or open state the app reads from a sensor or native check | Only if the app drives it from the controller | The controller exposes the picked device's `isFoldable` and `posture`. |
+| Screen metrics cached by a widget above `MaterialApp.builder` | Only if re-cached below the builder | Mount a second instance below `DeviceLab.appBuilder`. |
 | `dart:io` `Platform.isIOS` / `Platform.isAndroid` | **No** | Always the real device. |
 | `View.of(context)`, `PlatformDispatcher.instance.views`, `MediaQueryData.fromView` | **No** | The real window. |
 | Platform channels, plugins, sensors, `SystemChrome`, notifications | **No** | Native code runs on the real device. |
@@ -58,7 +57,7 @@ dependencies:
 `device_lab` depends on `flutter_test`. That only widens the dependency graph: nothing from it is compiled
 into the app unless you import `package:device_lab/device_lab_testing.dart`.
 
-### A plain Flutter app
+### Wiring
 
 ```dart
 /// Opt-in device preview: add `--dart-define=DEVICE_LAB=true` to a debug run. Const, so the package is
@@ -82,13 +81,17 @@ class MyApp extends StatelessWidget {
 Branch on the constant rather than passing `DeviceLab(enabled:)`: its default, `!kReleaseMode`, wraps
 every debug **and profile** run in a frame and keeps the package in release builds.
 
-### An app on `flutter_pixil_framework`
+If the app builds its `MaterialApp` inside a wrapper widget, pass `DeviceLab.appBuilder` through the
+wrapper's `builder` hook, composed with any builder it already has. Leave `DeviceLab.localeOf` out when the
+app drives its locale from its own state.
 
-`PixilApp` owns the `MaterialApp`, detects foldables from the hinge sensor and styles by
-`defaultTargetPlatform`. Follow [the Pixil wiring](../skills/device-lab/references/pixil.md): a part file
-next to the widget that returns `PixilApp`, three lines in that widget, and framework 1.5.0 or newer. It
-makes the fold flag, the fold cubit, the platform and the `num` scaling extensions follow the picked
-device.
+### Apps that detect device facts themselves
+
+If the app decides layout from a foldable flag read from a hinge sensor, styles by
+`defaultTargetPlatform`, or caches screen metrics above `MaterialApp.builder`, those facts keep the real
+device until the app drives them from the preview. Own the `DeviceLabController`, sync on every change, and
+provide preview state below `MaterialApp.builder`:
+[Driving an app's own device facts](../skills/device-lab/references/app-integration.md).
 
 ## Run it and use the panel
 
@@ -147,12 +150,9 @@ the preview, and on real devices too.
    something at phone size) makes everything inside it read as a phone. Capture fold state or orientation
    before the pin and pass the value in.
 3. **Platform: UI versus native.** For a purely visual choice (padding, title alignment, sheet style),
-   use `Theme.of(context).platform` or `defaultTargetPlatform`. Keep `dart:io` `Platform` for native
+   use `Theme.of(context).platform`, which follows the preview. Keep `dart:io` `Platform` for native
    capabilities — channels, plugins, file formats — which must follow the real device.
-4. **Pixil apps: fold state from the framework.** Read `PixilFrameWork().isFoldable` and the nearest
-   `FoldablePhoneCubit`, gated on `PixilFrameWork().isFoldable` (the cubit exists only on a foldable or
-   under the preview); never the bootstrap detection.
-5. **Don't cache device facts** in `initState` or statics if the screen should react to a device switch;
+4. **Don't cache device facts** in `initState` or statics if the screen should react to a device switch;
    read them in `build`.
 
 ## Troubleshooting
@@ -162,13 +162,12 @@ the preview, and on real devices too.
 | A large device renders small, squashed or overflowing, though `MediaQuery` reports its full size | pub.dev 0.3.2 lays devices larger than the stage out at the stage size | Use this fork |
 | A dialog or root sheet opens outside the device frame | pub.dev 0.3.2's own `MaterialApp` sits above the app | Use this fork |
 | `ext.deviceLab.*` not found | Release build, no `DeviceLab` mounted, or the app was started before device_lab was added | Debug run with the define; hot restart |
-| Pixil: a foldable is picked but the phone/tablet layout shows; a fold route opens full screen | Framework < 1.5.0, `foldableOverride` not passed, or code reads the bootstrap detection | The Pixil wiring; read `PixilFrameWork().isFoldable` |
-| Pixil: `ProviderNotFoundException` for `FoldablePhoneCubit` | The preview cubit is not provided below the navigator | `_previewBuilder` as `PixilApp.builder` |
-| Previewing an Android device, sheets still open the iOS way | No platform override (Pixil wiring), or a profile run | Run in debug with the Pixil wiring |
+| A foldable is picked but the fold layout or side panel never appears | The app reads its fold flag from a sensor or native check | [Driving an app's own device facts](../skills/device-lab/references/app-integration.md) |
+| Previewing an Android device, platform styling stays the host's | The app styles by `defaultTargetPlatform`, or a profile run | Set the platform override (same page); run in debug |
 | `'!locked': is not true` in `GestureBinding.handlePointerEvent` after a device change | `reassembleApplication()` called synchronously inside the panel's tap | Defer it with `Future<void>.microtask` |
-| Pixil: `16.w` / `14.sp` sizes match the host | Pixil's `ResponsiveBootstrap` sits above `PixilApp.builder` | The second `ResponsiveBootstrap` in `_previewBuilder` |
+| Scaled sizes match the host, not the picked device | Metrics cached by a widget above `MaterialApp.builder` | Mount a second instance below `DeviceLab.appBuilder` |
 | A value is wrong only inside a phone-sized preview widget | Read under a pinned `MediaQuery` | Read it on the outer context (rule 2) |
-| A tablet side drawer opens full width in portrait | Usually the app's own rule | Rotate, or change the app's rule |
+| A tablet side panel opens full width in portrait | Usually the app's own rule | Rotate, or change the app's rule |
 | Nothing changes with the define | The define is missing, or it is a release build | Check the run command |
 
 ## Release safety
